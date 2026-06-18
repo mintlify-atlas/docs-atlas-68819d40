@@ -1,47 +1,153 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Launch the Workshop in GitHub Codespaces in 5 Steps"
+sidebarTitle: "Quick Start"
+description: "Open the workshop in a preconfigured Codespace, add your OpenAI API key, start the Temporal dev server, and reach the first exercise notebook in minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+The fastest path to running the workshop is **GitHub Codespaces**. The repository ships with a fully configured `devcontainer.json` that installs Python 3.11, all dependencies, the Temporal CLI, and pre-configures VS Code extensions automatically. You do not need to install anything locally.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Open the Repository in GitHub Codespaces">
+    Navigate to the [temporalio/edu-ai-workshop-openai-agents-sdk](https://github.com/temporalio/edu-ai-workshop-openai-agents-sdk) repository on GitHub. Click the green **Code** button, select the **Codespaces** tab, and click **Create codespace on main**.
 
-    ```bash
-    npm install your-package
-    ```
+    GitHub will provision a cloud VM and begin building the development container.
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Wait for the Bootstrap Script to Complete">
+    The devcontainer runs `scripts/bootstrap.sh` automatically as its `postCreateCommand`. This script takes **2–3 minutes** and performs the following:
 
     ```bash
-    your-cli init
+    # What bootstrap.sh does (runs automatically — you do not need to run it)
+    pip install -e ".[dev]"          # Installs all Python dependencies
+    curl -sSf https://temporal.download/cli.sh | sh  # Installs Temporal CLI to ~/.temporalio/bin/
+    cp .env.sample .env              # Creates your .env file from the template
+    python scripts/check_env.py      # Validates the environment
     ```
+
+    You will see a terminal in VS Code printing bootstrap progress. Wait until you see `Bootstrap complete!` before proceeding.
+
+    <Note>
+      The `.env` file is created automatically from `.env.sample` by the bootstrap script. You do **not** need to copy it manually — just open it and fill in your API key.
+    </Note>
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Add Your OpenAI API Key to .env">
+    Open the `.env` file in the VS Code editor (it is at the repo root). It looks like this:
+
+    ```bash .env
+    # OpenAI API Key
+    # Get your key from: https://platform.openai.com/api-keys
+    OPENAI_API_KEY=
+
+    # Optional: Temporal Server Address (defaults to localhost:7233)
+    # TEMPORAL_ADDRESS=localhost:7233
+    ```
+
+    Paste your API key after `OPENAI_API_KEY=` and save the file:
+
+    ```bash .env
+    OPENAI_API_KEY=sk-proj-...your-key-here...
+    ```
+
+    Get a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys) if you do not already have one. The free tier is enough for the whole workshop.
+  </Step>
+
+  <Step title="Install and Start the Temporal Dev Server">
+    The workshop uses a Jupyter notebook for Temporal setup to ensure a consistent experience across all Codespaces environments.
+
+    1. In the VS Code **Explorer** panel, open **`temporal_installation.ipynb`**
+    2. Select the **`temporal-workshop`** kernel when prompted (or choose the Python 3.11 interpreter)
+    3. Run each cell in order — the notebook will:
+       - Verify the Temporal CLI is installed at `~/.temporalio/bin/temporal`
+       - Start the Temporal dev server (gRPC on port **7233**, Web UI on port **8233**)
+
+    Alternatively, you can use the Makefile target from the integrated terminal:
 
     ```bash
-    your-cli start
+    make temporal-up
     ```
+
+    <Note>
+      The `make temporal-up` command runs `scripts/run_temporal.sh`, which is idempotent — if Temporal is already running, it prints `Temporal server is already running` and exits cleanly.
+    </Note>
+  </Step>
+
+  <Step title="Verify the Temporal UI and Validate Your Environment">
+    **Check the Temporal UI is reachable:**
+
+    1. Click the **Ports** tab at the bottom of VS Code (next to Terminal)
+    2. Find **port 8233** labelled `Temporal UI`
+    3. Click the **Globe icon** to open the Temporal Web UI in your browser
+    4. You should see the Temporal dashboard with a `default` namespace listed
+
+    **Validate your full environment:**
+
+    ```bash
+    make setup   # Confirm all Python packages are installed
+    make env     # Run scripts/check_env.py to verify OPENAI_API_KEY
+    ```
+
+    A successful `make env` prints:
+
+    ```
+    SUCCESS: Environment configured correctly
+       OPENAI_API_KEY: sk-proj-...****
+    ```
+
+    If `make env` reports an error, see the [Environment Setup](/environment-setup) page for troubleshooting steps.
+  </Step>
+
+  <Step title="Open the First Exercise and Start the Workshop">
+    You are ready to begin! Open the first solution notebook:
+
+    ```
+    solutions/01_agent_hello_world/solution.ipynb
+    ```
+
+    Select the **`temporal-workshop`** kernel, then run the cells from top to bottom. This notebook walks you through building your first OpenAI agent with a live weather tool.
+
+    **Workshop flow:**
+
+    | Exercise | File | What you build |
+    |---|---|---|
+    | 1 | `solutions/01_agent_hello_world/solution.ipynb` | OpenAI agent with tool calling |
+    | 2 | `solutions/02_temporal_hello_world/solution.ipynb` | Temporal workflow + activity |
+    | 3 | `solutions/03_durable_agent/solution.ipynb` | Durable agent (key exercise) |
+    | 4 | `solutions/04_agent_routing/` (Python files) | Multi-agent routing system |
+
+    <Tip>
+      After the workshop, practice building each exercise from scratch using the `exercises/` directory. Each exercise notebook contains `TODO` markers that guide you through the implementation.
+    </Tip>
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Common Commands Reference
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+```bash
+# Validate environment and dependencies
+make setup          # Install all Python dependencies with pip install -e ".[dev]"
+make env            # Check OPENAI_API_KEY is set correctly
+
+# Temporal server
+make temporal-up    # Start Temporal dev server (idempotent — safe to run multiple times)
+make temporal-down  # Stop the Temporal dev server
+
+# Code quality
+make lint           # Run ruff (linter) and mypy (type checker)
+make test           # Run pytest test suite (mocked — no API key needed)
+
+# Cleanup
+make clean          # Remove __pycache__, .pytest_cache, .mypy_cache
+```
+
+For Exercise 4, which uses a production file structure, open **two terminal tabs** and run:
+
+```bash
+# Terminal 1 — start the Temporal worker
+cd solutions/04_agent_routing
+python worker.py
+
+# Terminal 2 — trigger the workflow
+cd solutions/04_agent_routing
+python starter.py
+```

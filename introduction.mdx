@@ -1,0 +1,144 @@
+---
+title: "Build Durable AI Agents with Temporal and OpenAI"
+sidebarTitle: "Introduction"
+description: "Learn what the Temporal + OpenAI Agents SDK Workshop teaches, why Temporal makes AI agents reliable, and how the 90-minute session is structured."
+---
+
+This workshop teaches you to build **durable AI agents** by combining the [OpenAI Agents SDK](https://platform.openai.com/docs/guides/function-calling) with [Temporal](https://docs.temporal.io/)—a workflow orchestration platform that adds automatic retries, crash recovery, and full execution history to any Python application. Over 90 minutes of instruction and hands-on exercises, you will progress from writing your first tool-calling agent all the way to running a production-style multi-agent routing workflow, entirely inside GitHub Codespaces with zero local setup.
+
+## What You'll Learn
+
+By the end of this workshop you will be able to:
+
+- **Create AI agents** with tool calling using OpenAI's Agents SDK
+- **Build Temporal workflows and activities** that survive failures and retries
+- **Wrap LLM calls in durable activities** so your agent never loses progress mid-run
+- **Implement multi-agent routing** with agent handoff patterns
+- **Observe and debug** agent execution in the Temporal Web UI
+
+## Prerequisites
+
+<CardGroup cols={3}>
+  <Card title="Basic Python" icon="python" href="https://docs.python.org/3/tutorial/">
+    You should be comfortable writing functions and using `async/await`. No advanced Python required.
+  </Card>
+  <Card title="OpenAI API Key" icon="key" href="https://platform.openai.com/api-keys">
+    A key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys). The free tier is sufficient — expect to spend roughly **$0.50–$1.00** in API credits.
+  </Card>
+  <Card title="GitHub Account" icon="github" href="https://github.com/signup">
+    Required to open the repository in GitHub Codespaces. No local installation of any tool is needed.
+  </Card>
+</CardGroup>
+
+## Why Temporal for AI Agents?
+
+Running AI agents in production surfaces a set of reliability problems that plain Python cannot solve on its own.
+
+### The Problem
+
+| Challenge | What Happens Without Temporal |
+|---|---|
+| **API failures** | LLM APIs get rate-limited or return 5xx errors — your agent crashes and loses all progress |
+| **Process crashes** | A server restart mid-execution means starting over from scratch |
+| **Long-running operations** | Multi-step agent flows have no built-in checkpoint mechanism |
+| **Observability** | There is no record of what your agent actually decided or executed |
+
+### The Solution
+
+Temporal solves each problem by providing:
+
+- **Automatic retries** with configurable backoff and retry policies on every activity
+- **State persistence** so workflows resume exactly where they left off after any failure
+- **Execution history** for auditing, debugging, and replaying past runs
+- **Durable execution** that survives worker crashes, deployments, and infrastructure events
+
+<Note>
+  Your agent code itself does not change — Temporal wraps each LLM call and tool invocation in an activity, giving it superpowers with no modifications to your business logic.
+</Note>
+
+## Architecture Pattern
+
+The core pattern you will build in Exercise 3 and Exercise 4 looks like this:
+
+```
+       User Query
+           ↓
+   ┌───────────────────────────┐
+   │ Temporal Workflow         │  ← Orchestration layer
+   └───────────────────────────┘
+           ↓
+   ┌───────────────────────────┐
+   │ Activity: Call LLM        │  ← AI decision making (retryable)
+   │    with tools             │
+   └───────────────────────────┘
+           ↓
+      [If tool needed]
+           ↓
+   ┌───────────────────────────┐
+   │ Activity: Execute tool    │  ← Take action (retryable)
+   └───────────────────────────┘
+           ↓
+   ┌───────────────────────────┐
+   │ Activity: Get final       │  ← Final response (retryable)
+   │    LLM response           │
+   └───────────────────────────┘
+           ↓
+       Return to user
+```
+
+Each box is an independently retryable Temporal activity. If any step fails, Temporal retries only that step — not the entire flow.
+
+## Workshop Structure
+
+The session is 90 minutes: **30 minutes of instructor-led explanation** followed by **four 15-minute hands-on exercises**.
+
+| Time | Activity |
+|---|---|
+| 00:00 – 05:00 | Introduction and setup verification |
+| 05:00 – 30:00 | OpenAI Agents SDK slides + Exercise 1 walkthrough |
+| 30:00 – 55:00 | Temporal fundamentals slides + Exercise 2 walkthrough |
+| 55:00 – 80:00 | Combined architecture slides + Exercise 3 walkthrough |
+| 80:00 – 90:00 | Exercise 4 demo, production patterns, and Q&A |
+
+**During the workshop** you will explore and run fully working implementations in the `solutions/` directory. **After the workshop** you can practice building everything from scratch using the `exercises/` directory as optional homework — each exercise contains starter code with `TODO` markers.
+
+<Info>
+  Exercises 1–3 are Jupyter notebooks (`.ipynb` files). Exercise 4 uses separate Python files (`workflow.py`, `worker.py`, `starter.py`) to demonstrate a production-style Temporal application structure.
+</Info>
+
+## The Four Exercises
+
+<CardGroup cols={2}>
+  <Card
+    title="Exercise 1 — Agent Hello World"
+    icon="robot"
+    href="/exercises/agent-hello-world"
+  >
+    Build your first OpenAI agent with a weather tool that calls the National Weather Service API. Learn the agent → tool → response flow and see how the LLM decides when to invoke tools.
+  </Card>
+  <Card
+    title="Exercise 2 — Temporal Hello World"
+    icon="clock-rotate-left"
+    href="/exercises/temporal-hello-world"
+  >
+    Write your first Temporal workflow and activity in Python. Observe execution history in the Temporal UI and trigger an automatic retry by simulating a failure.
+  </Card>
+  <Card
+    title="Exercise 3 — Durable Agent"
+    icon="shield-check"
+    href="/exercises/durable-agent"
+  >
+    The key exercise. Wrap LLM calls and tool executions in Temporal activities to create a production-ready durable agent. Add a `trace_id` for correlation with OpenAI traces.
+  </Card>
+  <Card
+    title="Exercise 4 — Agent Routing"
+    icon="code-branch"
+    href="/exercises/agent-routing"
+  >
+    Build a multi-agent routing system with language-specific agents (French, Spanish, English) using OpenAI Agents SDK handoff patterns and a production file structure.
+  </Card>
+</CardGroup>
+
+## Cost Estimate
+
+The workshop uses approximately **$0.50–$1.00** of OpenAI API credits across all four exercises. The free tier is more than sufficient. All exercises use `gpt-4o-mini` by default to keep costs low.

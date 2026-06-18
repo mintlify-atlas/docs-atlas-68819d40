@@ -1,0 +1,77 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Temporal + OpenAI Agents SDK Workshop",
+  "projectDescription": "A hands-on 90-minute workshop teaching developers how to build production-ready durable AI agents using the OpenAI Agents SDK and Temporal, running entirely in GitHub Codespaces.",
+  "theme": "luma",
+  "primaryColor": "#040404",
+  "lightColor": null,
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Workshop",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "environment-setup"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/openai-agents-sdk",
+              "concepts/temporal-fundamentals",
+              "concepts/durable-ai-agents"
+            ]
+          },
+          {
+            "group": "Exercises",
+            "pages": [
+              "exercises/agent-hello-world",
+              "exercises/temporal-hello-world",
+              "exercises/durable-agent",
+              "exercises/agent-routing"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/project-structure",
+              "reference/makefile-commands",
+              "reference/troubleshooting"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "OpenAI Agents SDK integration with tool calling and handoff patterns",
+    "Temporal workflows and activities for durable AI agent execution",
+    "Automatic retries and state persistence across crashes",
+    "Multi-agent routing with language-specific specialist agents",
+    "Full observability via Temporal Web UI and OpenAI traces",
+    "Zero local setup — runs entirely in GitHub Codespaces",
+    "Progressive learning path from basic agents to production patterns",
+    "Complete solutions and homework exercise starters included"
+  ],
+  "publicApiSurface": [
+    "Agent (openai-agents) — create an AI agent with instructions and tools",
+    "Runner.run() — execute an agent with a user query",
+    "@function_tool — decorator to expose Python functions as agent tools",
+    "handoffs — list of specialist agents a triage agent can delegate to",
+    "@workflow.defn / @workflow.run — define a Temporal workflow",
+    "@activity.defn — define a Temporal activity",
+    "workflow.execute_activity() — call an activity from within a workflow",
+    "OpenAIAgentsPlugin — Temporal plugin for OpenAI Agents SDK integration",
+    "ModelActivityParameters — configure LLM activity timeouts",
+    "Client.connect() — connect to Temporal server",
+    "Worker — poll and execute workflow/activity tasks",
+    "client.start_workflow() — start a workflow execution",
+    "UnsandboxedWorkflowRunner — required for notebook-hosted workers",
+    "make setup / make env / make lint / make test / make temporal-up"
+  ]
+}

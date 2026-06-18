@@ -1,0 +1,262 @@
+---
+title: "Configure Your Workshop Environment: Dependencies & Temporal"
+sidebarTitle: "Environment Setup"
+description: "Full reference for workshop Python packages, the .env API key, Temporal CLI, dev server ports, Jupyter kernel setup, and pre-installed VS Code extensions."
+---
+
+This page is the complete reference for everything the workshop environment needs: Python dependencies, environment variables, the Temporal dev server, and the Jupyter kernel. In GitHub Codespaces, nearly all of this is handled automatically by the `scripts/bootstrap.sh` script — this page documents exactly what that script sets up so you can reproduce or troubleshoot any part of it.
+
+## Python Dependencies
+
+The project is defined in `pyproject.toml` and requires **Python ≥ 3.11**. Install everything with a single command:
+
+```bash
+make setup
+# equivalent to: pip install -e ".[dev]"
+```
+
+### Runtime Dependencies
+
+| Package | Version | Purpose |
+|---|---|---|
+| `openai` | `>=1.54.0` | OpenAI Python client library |
+| `openai-agents` | `>=0.3.3` | OpenAI Agents SDK (tool calling, handoffs) |
+| `temporalio` | `>=1.7.0` | Temporal Python SDK (workflows, activities, workers) |
+| `httpx` | `>=0.27.0` | Async HTTP client used by agent tools |
+| `rich` | `>=13.7.0` | Formatted terminal output in exercises |
+| `typer` | `>=0.12.0` | CLI helpers for exercise scripts |
+| `python-dotenv` | `>=1.0.0` | Loads `.env` file into environment variables |
+| `jupyter` | `>=1.0.0` | Jupyter ecosystem meta-package |
+| `ipykernel` | `>=6.29.0` | Jupyter kernel for Python 3.11 |
+| `notebook` | `>=7.0.0` | Jupyter Notebook server |
+| `nest-asyncio` | `>=1.6.0` | Allows nested event loops inside Jupyter notebooks |
+| `pytz` | `>=2024.1` | Timezone support used in exercise utilities |
+
+### Dev Dependencies
+
+| Package | Version | Purpose |
+|---|---|---|
+| `pytest` | `>=8.0.0` | Test runner |
+| `pytest-asyncio` | `>=0.23.0` | `async def` test support |
+| `ruff` | `>=0.6.0` | Fast Python linter and formatter |
+| `mypy` | `>=1.11.0` | Static type checker |
+
+<Tip>
+  Run `make lint` to execute both `ruff check .` and `mypy exercises/ solutions/ scripts/` in one step. Run `make test` to run the full test suite — tests mock all OpenAI API calls so no API key is needed.
+</Tip>
+
+## The `.env` File and API Key
+
+<Warning>
+  Never commit your `.env` file to git. It is already listed in `.gitignore`, but double-check before pushing any changes. Exposing an OpenAI API key in a public repository will cause it to be automatically revoked by OpenAI.
+</Warning>
+
+The bootstrap script copies `.env.sample` to `.env` automatically when the Codespace is created. The `.env.sample` template contains:
+
+```bash .env.sample
+# OpenAI API Key
+# Get your key from: https://platform.openai.com/api-keys
+OPENAI_API_KEY=
+
+# Optional: Temporal Server Address (defaults to localhost:7233)
+# TEMPORAL_ADDRESS=localhost:7233
+```
+
+### Getting an OpenAI API Key
+
+1. Sign in to the [OpenAI Platform](https://platform.openai.com/api-keys)
+2. Click **+ Create new secret key**
+3. Copy the key immediately — it is only shown once
+4. Paste it into your `.env` file:
+
+```bash .env
+OPENAI_API_KEY=sk-proj-...your-full-key...
+```
+
+### Verifying the Key is Set Correctly
+
+```bash
+make env
+# equivalent to: python scripts/check_env.py
+```
+
+The script loads `.env` with `python-dotenv`, checks that `OPENAI_API_KEY` is non-empty, and prints a masked preview:
+
+```
+SUCCESS: Environment configured correctly
+   OPENAI_API_KEY: sk-proj-...****
+```
+
+If the key is missing or blank, the script exits with a non-zero code and prints instructions for fixing the issue.
+
+## Temporal CLI Installation
+
+The Temporal CLI is installed by `scripts/bootstrap.sh` using the official installer script. In a Codespace this runs automatically at container creation time:
+
+```bash
+# What bootstrap.sh runs to install the CLI (runs automatically — no manual step needed)
+curl -sSf https://temporal.download/cli.sh | sh
+export PATH="$HOME/.temporalio/bin:$PATH"
+echo 'export PATH="$HOME/.temporalio/bin:$PATH"' >> ~/.bashrc
+```
+
+The binary is placed at **`~/.temporalio/bin/temporal`** and the path is added to `~/.bashrc` for all future shell sessions.
+
+Verify the CLI is available:
+
+```bash
+temporal --version
+```
+
+<Accordion title="Manual CLI installation (if bootstrap did not run)">
+  If you are setting up outside Codespaces or the bootstrap script was skipped, run it directly:
+
+  ```bash
+  bash scripts/bootstrap.sh
+  ```
+
+  Or install just the CLI:
+
+  ```bash
+  curl -sSf https://temporal.download/cli.sh | sh
+  export PATH="$HOME/.temporalio/bin:$PATH"
+  ```
+</Accordion>
+
+## Starting the Temporal Dev Server
+
+The Temporal dev server provides a local gRPC endpoint and a Web UI for observing workflow executions during the workshop.
+
+| Endpoint | Address |
+|---|---|
+| gRPC (SDK connects here) | `localhost:7233` |
+| Web UI | `localhost:8233` |
+
+### Recommended: Use the Notebook
+
+All workshop instructions use `temporal_installation.ipynb` for starting Temporal:
+
+1. Open **`temporal_installation.ipynb`** in VS Code
+2. Select the **`temporal-workshop`** kernel
+3. Run each cell — the notebook installs the CLI (if needed) and starts the dev server
+4. The server persists state to `~/.temporal/default.db`
+
+### Alternative: Make Target
+
+```bash
+make temporal-up
+```
+
+This runs `scripts/run_temporal.sh`, which is idempotent — running it when Temporal is already active prints `Temporal server is already running` and exits cleanly without starting a duplicate process:
+
+```bash
+# scripts/run_temporal.sh behaviour:
+# Already running → prints status and exits 0
+# Not running     → starts: temporal server start-dev --db-filename ~/.temporal/default.db
+```
+
+### Stopping the Dev Server
+
+```bash
+make temporal-down
+# equivalent to: pkill -f "temporal server start-dev"
+```
+
+## Accessing the Temporal Web UI in Codespaces
+
+GitHub Codespaces automatically port-forwards both Temporal ports. The `devcontainer.json` configures this:
+
+```json
+"forwardPorts": [7233, 8233],
+"portsAttributes": {
+  "7233": { "label": "Temporal Server", "onAutoForward": "ignore" },
+  "8233": { "label": "Temporal UI",    "onAutoForward": "notify" }
+}
+```
+
+To open the Web UI:
+
+1. Click the **Ports** tab at the bottom of VS Code
+2. Find the row labelled **`Temporal UI`** (port `8233`)
+3. Click the **Globe icon** in that row to open the UI in your browser
+4. If you need to share access, right-click the row and set visibility to **Public**
+
+<Accordion title="Can't access port 8233? Troubleshooting steps">
+  **Check the server is running:**
+
+  ```bash
+  pgrep -f "temporal server start-dev"
+  ```
+
+  If no PID is returned, restart via `temporal_installation.ipynb` or `make temporal-up`.
+
+  **Check the port is forwarded:**
+
+  In the Ports tab, ensure port `8233` appears with a green indicator. If it is missing, click **Forward a Port**, enter `8233`, and press Enter.
+
+  **Temporal UI not loading in browser:**
+
+  Wait 5–10 seconds after starting the server — the Web UI takes a moment to become available after the gRPC endpoint is ready.
+</Accordion>
+
+## Jupyter Kernel Setup
+
+All notebooks in `solutions/` and `exercises/` use the **`temporal-workshop`** kernel. The bootstrap script installs it automatically. To install or reinstall it manually:
+
+```bash
+python -m ipykernel install --user --name temporal-workshop
+```
+
+When opening any `.ipynb` file in VS Code, select **`temporal-workshop`** from the kernel picker in the top-right corner of the notebook interface.
+
+<Accordion title="Kernel not appearing in VS Code? Troubleshooting steps">
+  ```bash
+  # Reinstall ipykernel and re-register the kernel
+  pip install ipykernel
+  python -m ipykernel install --user --name temporal-workshop
+
+  # Reload the VS Code window
+  # Press Ctrl+Shift+P → "Developer: Reload Window"
+  ```
+
+  After reloading, the `temporal-workshop` kernel should appear in the kernel picker.
+</Accordion>
+
+<Accordion title="nest-asyncio: why it is required in notebooks">
+  Jupyter notebooks run an event loop internally. The Temporal SDK also needs to run an event loop for workflow and activity execution. `nest-asyncio` patches the running loop to allow these nested calls without raising `RuntimeError: This event loop is already running`. All workshop notebooks call `nest_asyncio.apply()` near the top — this is expected and intentional.
+</Accordion>
+
+## VS Code Extensions
+
+The `devcontainer.json` pre-installs the following extensions in Codespaces:
+
+| Extension ID | Name | Purpose |
+|---|---|---|
+| `ms-python.python` | Python | Language support, IntelliSense, debugging |
+| `ms-python.vscode-pylance` | Pylance | Fast type-aware autocomplete |
+| `ms-toolsai.jupyter` | Jupyter | Notebook editing and kernel management |
+| `charliermarsh.ruff` | Ruff | Inline linting and format-on-save |
+
+The workspace is also configured to format Python files automatically on save using Ruff, with import organisation applied explicitly. No additional configuration is required.
+
+## Quick Reference: All Validation Commands
+
+```bash
+# Check Python dependencies are installed
+make setup
+
+# Verify OPENAI_API_KEY in .env
+make env
+
+# Check Temporal CLI is on PATH
+temporal --version
+
+# Check Temporal server is running (returns PID if running)
+pgrep -f "temporal server start-dev"
+
+# Run linter and type checker
+make lint
+
+# Run full test suite (no API key needed — all mocked)
+make test
+```

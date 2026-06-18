@@ -1,0 +1,463 @@
+---
+title: "Multi-Agent Routing Workflow with Language Specialists"
+sidebarTitle: "Agent Routing"
+description: "Build a triage-and-handoff multi-agent system in production file structure: a triage agent detects language and routes to French, Spanish, or English specialist agents inside a durable Temporal workflow."
+---
+
+Exercise 4 graduates from notebooks to a **production-style Python project**. You will have three separate files—`workflow.py`, `worker.py`, and `starter.py`—and run two terminal processes simultaneously, exactly as you would in a real deployment. The workflow includes a deliberate 10-second pause so you can kill the worker mid-execution and prove that Temporal resumes from the pause point rather than re-running the triage agent.
+
+<Warning>
+  The Temporal dev server must be running and your `OPENAI_API_KEY` must be set in `.env` before starting. Run `make env` from the project root to verify both.
+</Warning>
+
+<Info>
+  **Timebox: 15 minutes** — Explore and run the complete implementation in `solutions/04_agent_routing/` during the workshop. Then build it yourself in `exercises/04_agent_routing/` as optional homework.
+</Info>
+
+## What You'll Learn
+
+<CardGroup cols={2}>
+  <Card title="Triage & Routing Pattern" icon="code-branch">
+    Design a triage agent that never answers directly—it only detects intent and hands off to the right specialist.
+  </Card>
+  <Card title="Handoff Pattern" icon="right-left">
+    Use the `handoffs` parameter in the OpenAI Agents SDK to enable seamless agent-to-agent transitions.
+  </Card>
+  <Card title="Production File Structure" icon="folder-open">
+    Separate `workflow.py`, `worker.py`, and `starter.py` mirrors real Temporal applications and enables independent scaling.
+  </Card>
+  <Card title="Two-Terminal Workflow" icon="terminal">
+    Run a long-lived worker process and a one-shot starter process as separate OS processes—the standard production pattern.
+  </Card>
+</CardGroup>
+
+## Goal
+
+Build a `RoutingWorkflow` that routes any user message to the correct language specialist (French, Spanish, or English) via a triage agent, with the full execution wrapped in Temporal for durability and observability.
+
+## Architecture
+
+```
+User Query (any language)
+        ↓
+┌───────────────────────────┐
+│ Temporal Workflow         │  Orchestration
+│ (orchestration layer)     │
+└───────────────────────────┘
+        ↓
+┌───────────────────────────┐
+│ Activity: Call Triage     │  Analyze Request
+│    Agent                  │
+└───────────────────────────┘
+        ↓
+[Triage agent detects language]
+        ↓
+┌───────────────────────────┐
+│ Activity: Handoff to      │  Smart Routing
+│    Specialist Agent       │
+└───────────────────────────┘
+        ↓
+┌───────────────────────────┐
+│ Activity: Specialist      │  Expert Response
+│    Agent processes query  │
+└───────────────────────────┘
+        ↓
+    Return response to user
+```
+
+## File Structure
+
+```
+solutions/04_agent_routing/
+├── workflow.py      # Workflow definition and all agent configurations
+├── worker.py        # Worker process that polls and executes workflows
+├── starter.py       # One-shot script that starts a workflow execution
+├── requirements.txt # Python dependencies
+└── README.md        # Exercise guide
+```
+
+The same structure lives in `exercises/04_agent_routing/` with `TODO` markers for you to complete as homework.
+
+## Complete Solution Code
+
+<CodeGroup>
+```python workflow.py
+"""
+Routing workflow implementation using OpenAI Agents SDK.
+
+Demonstrates intelligent request distribution to specialized language agents.
+The triage agent analyzes incoming queries and routes them to the appropriate
+language specialist (French, Spanish, or English) using the handoff pattern.
+"""
+
+from datetime import timedelta
+
+from agents import Agent, RunConfig, Runner, TResponseInputItem, trace
+from temporalio import workflow
+
+# Task queue name for this workflow pattern
+TASK_QUEUE = "routing-workflow-queue"
+
+
+def french_agent() -> Agent:
+    """Create a French language specialist agent."""
+    return Agent(
+        name="French Agent",
+        instructions="You only speak French. Respond naturally to user queries in French.",
+        model="gpt-4",
+    )
+
+
+def spanish_agent() -> Agent:
+    """Create a Spanish language specialist agent."""
+    return Agent(
+        name="Spanish Agent",
+        instructions="You only speak Spanish. Respond naturally to user queries in Spanish.",
+        model="gpt-4",
+    )
+
+
+def english_agent() -> Agent:
+    """Create an English language specialist agent."""
+    return Agent(
+        name="English Agent",
+        instructions="You only speak English. Respond naturally to user queries in English.",
+        model="gpt-4",
+    )
+
+
+def triage_agent() -> Agent:
+    """
+    Create a triage agent that routes requests to language specialists.
+
+    The handoff pattern enables multi-agent architectures where different
+    agents have different specializations and can collaborate on tasks.
+    """
+    return Agent(
+        name="Triage Agent",
+        instructions=(
+            "Identify the primary language of the user's message. "
+            "Never answer directly. "
+            "Immediately hand off using one of the following rules: "
+            "- French → French Agent "
+            "- Spanish → Spanish Agent "
+            "- English → English Agent "
+            "If detection is uncertain or the language is unsupported, hand off to English Agent."
+        ),
+        handoffs=[french_agent(), spanish_agent(), english_agent()],
+        model="gpt-4",
+    )
+
+
+@workflow.defn
+class RoutingWorkflow:
+    @workflow.run
+    async def run(self, msg: str) -> str:
+        config = RunConfig()
+
+        with trace("Routing example"):
+            inputs: list[TResponseInputItem] = [{"content": msg, "role": "user"}]
+
+            # Run the triage agent to determine which language agent to handoff to
+            result = await Runner.run(
+                triage_agent(),
+                input=inputs,
+                run_config=config,
+            )
+
+            # 10-second pause to demonstrate Temporal durability:
+            # kill the worker here and restart it to see the workflow resume
+            # from this point without re-running the triage agent.
+            workflow.logger.info("⏸️  Pausing for 10 seconds to demonstrate durability...")
+            await workflow.sleep(timedelta(seconds=10))
+
+            workflow.logger.info("Handoff completed")
+            return f"Response: {result.final_output}"
+```
+
+```python worker.py
+"""
+Temporal worker for the routing workflow pattern.
+
+To run: python worker.py
+"""
+
+import asyncio
+from datetime import timedelta
+
+from dotenv import load_dotenv
+from temporalio.client import Client
+from temporalio.contrib.openai_agents import ModelActivityParameters, OpenAIAgentsPlugin
+from temporalio.worker import Worker
+
+from workflow import TASK_QUEUE, RoutingWorkflow
+
+load_dotenv()
+
+
+async def main():
+    """Start the Temporal worker that executes routing workflows."""
+    client = await Client.connect(
+        "localhost:7233",
+        plugins=[
+            OpenAIAgentsPlugin(
+                model_params=ModelActivityParameters(
+                    start_to_close_timeout=timedelta(seconds=30)
+                )
+            )
+        ],
+    )
+
+    worker = Worker(
+        client,
+        task_queue=TASK_QUEUE,
+        workflows=[RoutingWorkflow],
+        # No activities registered here — the OpenAIAgentsPlugin
+        # automatically creates activities for agent execution.
+    )
+
+    print("🚀 Worker started successfully")
+    print(f"📋 Task Queue: {TASK_QUEUE}")
+    print(f"🔄 Workflows: {RoutingWorkflow.__name__}")
+    print("⏳ Polling for tasks... (Press Ctrl+C to stop)\n")
+
+    await worker.run()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+```python starter.py
+"""
+Workflow starter for the routing workflow pattern.
+
+To run: python starter.py "Your query here"
+Example: python starter.py "¡Hola! Cuéntame un trabalenguas."
+"""
+
+import asyncio
+import sys
+from datetime import datetime
+
+import pytz
+from dotenv import load_dotenv
+from temporalio.client import Client
+from temporalio.contrib.openai_agents import OpenAIAgentsPlugin
+
+from workflow import TASK_QUEUE, RoutingWorkflow
+
+load_dotenv()
+
+
+async def main():
+    """Execute the routing workflow with sample queries in different languages."""
+    # Accept query from command line or use default
+    if len(sys.argv) > 1:
+        query = sys.argv[1]
+    else:
+        query = "Hi! Tell me a tongue twister."
+
+    client = await Client.connect(
+        "localhost:7233",
+        plugins=[OpenAIAgentsPlugin()],
+    )
+
+    # Generate a human-readable workflow ID using an EST timestamp
+    est = pytz.timezone("US/Eastern")
+    now = datetime.now(est)
+    workflow_id = f"routing-{now.strftime('%a-%b-%d-%I%M%S').lower()}est"
+
+    print("🚀 Starting Routing Workflow")
+    print(f"📋 Workflow ID: {workflow_id}")
+    print(f"💬 Query: {query}")
+
+    handle = await client.start_workflow(
+        RoutingWorkflow.run,
+        query,
+        id=workflow_id,
+        task_queue=TASK_QUEUE,
+    )
+
+    print(f"✅ Workflow started: {handle.id}")
+    print(
+        f"🔗 View in Temporal UI: http://localhost:8233/namespaces/default/workflows/{workflow_id}\n"
+    )
+    print("⏳ Waiting for agent response...\n")
+
+    result = await handle.result()
+    print(f"💬 Agent Response: {result}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+</CodeGroup>
+
+## How to Run
+
+<Steps>
+  <Step title="Navigate to the solutions directory">
+    ```bash
+    cd solutions/04_agent_routing
+    ```
+  </Step>
+
+  <Step title="Terminal 1 — Start the worker">
+    Keep this terminal open. The worker runs indefinitely, polling for tasks.
+
+    ```bash
+    python worker.py
+    ```
+
+    Expected output:
+    ```
+    🚀 Worker started successfully
+    📋 Task Queue: routing-workflow-queue
+    🔄 Workflows: RoutingWorkflow
+    ⏳ Polling for tasks... (Press Ctrl+C to stop)
+    ```
+  </Step>
+
+  <Step title="Terminal 2 — Start a workflow">
+    In a new terminal, run the starter with a query in any supported language:
+
+    ```bash
+    # Spanish
+    python starter.py "¡Hola! Cuéntame un trabalenguas."
+
+    # French
+    python starter.py "Bonjour! Comment allez-vous aujourd'hui?"
+
+    # English
+    python starter.py "Hello! How are you doing today?"
+    ```
+
+    Expected output:
+    ```
+    🚀 Starting Routing Workflow
+    📋 Workflow ID: routing-wed-oct-16-103045est
+    💬 Query: ¡Hola! Cuéntame un trabalenguas.
+
+    ✅ Workflow started: routing-wed-oct-16-103045est
+    🔗 View in Temporal UI: http://localhost:8233/namespaces/default/workflows/routing-wed-oct-16-103045est
+
+    ⏳ Waiting for agent response...
+
+    💬 Agent Response: Response: Tres tristes tigres tragaban trigo en un trigal...
+    ```
+  </Step>
+
+  <Step title="Observe the handoff in the Temporal UI">
+    Open the Temporal UI link printed by the starter. In the execution history you will see:
+
+    - `ActivityTaskScheduled` and `ActivityTaskCompleted` events for the triage agent's LLM call
+    - A `TimerStarted` / `TimerFired` pair representing the 10-second `workflow.sleep`
+    - `ActivityTaskScheduled` and `ActivityTaskCompleted` events for the specialist agent's LLM call
+  </Step>
+
+  <Step title="Demonstrate durability (optional, highly recommended)">
+    This step makes Temporal's durability guarantee concrete:
+
+    1. Start a new workflow in Terminal 2.
+    2. Watch Terminal 1 for the log line: `⏸️  Pausing for 10 seconds to demonstrate durability...`
+    3. Press **Ctrl+C** in Terminal 1 to kill the worker during the pause.
+    4. In the Temporal UI, observe the workflow is still **Running**—it is waiting at the timer.
+    5. Restart the worker in Terminal 1: `python worker.py`
+    6. The workflow resumes from the timer. The triage agent call is **never re-executed**.
+    7. Terminal 2 receives the final response.
+  </Step>
+</Steps>
+
+## Language Routing Examples
+
+<Tabs>
+  <Tab title="Spanish">
+    ```bash
+    python starter.py "¡Hola! Cuéntame un trabalenguas."
+    ```
+    The triage agent detects Spanish and hands off to **Spanish Agent**.
+
+    Expected: _Tres tristes tigres tragaban trigo en un trigal..._
+  </Tab>
+  <Tab title="French">
+    ```bash
+    python starter.py "Bonjour! Raconte-moi un virelangue."
+    ```
+    The triage agent detects French and hands off to **French Agent**.
+
+    Expected: _Les chaussettes de l'archiduchesse..._
+  </Tab>
+  <Tab title="English">
+    ```bash
+    python starter.py "Hi! Tell me a tongue twister."
+    ```
+    The triage agent detects English and hands off to **English Agent**.
+
+    Expected: _She sells seashells by the seashore..._
+  </Tab>
+  <Tab title="Mixed / Edge Cases">
+    ```bash
+    python starter.py "Hello! ¿Cómo estás? Je vais bien."
+    ```
+    When detection is uncertain the triage agent's instructions direct it to fall back to **English Agent**.
+  </Tab>
+</Tabs>
+
+## Stretch Goals
+
+<Accordion title="Add a German specialist agent">
+  Create a `german_agent()` function and add it to the triage agent's `handoffs` list:
+
+  ```python
+  def german_agent() -> Agent:
+      return Agent(
+          name="German Agent",
+          instructions="You only speak German. Respond naturally in German.",
+          model="gpt-4",
+      )
+
+  def triage_agent() -> Agent:
+      return Agent(
+          name="Triage Agent",
+          instructions=(
+              "... "
+              "- German → German Agent "
+              "..."
+          ),
+          handoffs=[french_agent(), spanish_agent(), english_agent(), german_agent()],
+          model="gpt-4",
+      )
+  ```
+
+  Test with: `python starter.py "Hallo! Wie geht es Ihnen heute?"`
+</Accordion>
+
+<Accordion title="Add conversation history">
+  Modify the workflow signature to accept an optional history list for multi-turn conversations:
+
+  ```python
+  @workflow.run
+  async def run(self, user_query: str, conversation_history: list | None = None) -> str:
+      history = conversation_history or []
+      inputs: list[TResponseInputItem] = history + [{"content": user_query, "role": "user"}]
+      # Pass inputs to Runner.run(triage_agent(), input=inputs, ...)
+  ```
+
+  Update the starter to persist the returned history and pass it back on subsequent calls.
+</Accordion>
+
+<Accordion title="Add a fallback agent for unclear language">
+  When the triage agent cannot confidently detect a language, route to a general-purpose agent:
+
+  ```python
+  def general_agent() -> Agent:
+      return Agent(
+          name="General Agent",
+          instructions="You handle queries when the language is unclear or mixed. Respond in English.",
+          model="gpt-4",
+      )
+  ```
+
+  Update the triage agent's instructions to include: _"If language is unclear or mixed → General Agent"_ and add `general_agent()` to `handoffs`.
+</Accordion>

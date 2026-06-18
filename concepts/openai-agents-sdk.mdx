@@ -1,0 +1,249 @@
+---
+title: "OpenAI Agents SDK: Core Concepts for This Workshop"
+sidebarTitle: "Agents SDK"
+description: "Learn how the openai-agents Python package works—Agent, Runner, @function_tool, handoffs, and trace—as used in the workshop exercises."
+---
+
+The **OpenAI Agents SDK** (`openai-agents` Python package) is the AI backbone of this workshop. It gives you a high-level API for building LLM-powered agents that can call tools, hand off to other agents, and produce structured outputs—without managing raw API requests yourself. This page explains every SDK primitive you will use across the four workshop exercises.
+
+## The `Agent` Class
+
+An `Agent` is the central object in the SDK. You construct one by declaring its identity, behaviour, and capabilities:
+
+```python
+from agents import Agent
+
+agent = Agent(
+    name="Weather Agent",
+    instructions="You help users get weather alert information for US states. "
+                 "Use the get_weather_alerts tool to fetch real data from the "
+                 "National Weather Service.",
+    tools=[get_weather_alerts],
+)
+```
+
+| Parameter | Type | Purpose |
+|-----------|------|---------|
+| `name` | `str` | Human-readable label; appears in OpenAI traces |
+| `instructions` | `str` | System prompt that shapes the agent's behaviour |
+| `tools` | `list` | Functions the LLM can invoke (decorated with `@function_tool`) |
+| `model` | `str` | OpenAI model to use, e.g. `"gpt-4"` (defaults to `gpt-4o`) |
+| `handoffs` | `list[Agent]` | Other agents this agent can transfer control to |
+
+## Running an Agent with `Runner.run()`
+
+`Runner.run()` is an **async** method that drives the full agent loop—sending the user query to the LLM, executing any tool calls the LLM requests, feeding results back, and repeating until the LLM produces a final answer.
+
+```python
+from agents import Runner
+
+result = await Runner.run(agent, "Are there any weather alerts for California?")
+
+print(result.final_output)
+# → "There are currently 2 active weather alerts for California: ..."
+```
+
+The returned object exposes `.final_output` (the agent's last text response) and `.new_messages` (the full message history for that run).
+
+## The `@function_tool` Decorator
+
+`@function_tool` converts any async Python function into a tool the LLM can call. The **docstring** becomes the tool description that the LLM reads to decide when to use it; **type hints** become the JSON schema for the tool's parameters.
+
+<CodeGroup>
+
+```python Weather tool definition
+from agents import function_tool
+import httpx
+
+@function_tool
+async def get_weather_alerts(state: str) -> str:
+    """
+    Get current weather alerts for a US state from the National Weather Service.
+
+    Args:
+        state: Two-letter US state code (e.g., 'CA', 'NY', 'TX')
+
+    Returns:
+        String describing current weather alerts
+    """
+    url = f"https://api.weather.gov/alerts/active/area/{state.upper()}"
+    headers = {"User-Agent": "OpenAI-Agents-Workshop (educational)"}
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        features = data.get("features", [])
+
+    if not features:
+        return f"No active weather alerts for {state.upper()}."
+
+    alerts = []
+    for feature in features[:5]:
+        properties = feature.get("properties", {})
+        event = properties.get("event", "Unknown")
+        headline = properties.get("headline", "No headline")
+        severity = properties.get("severity", "Unknown")
+        alerts.append(f"- {event} ({severity}): {headline}")
+
+    return f"Active weather alerts for {state.upper()}:\n" + "\n".join(alerts)
+```
+
+```python Agent using the tool
+agent = Agent(
+    name="Weather Agent",
+    instructions="You help users get weather alert information for US states. "
+                 "Use the get_weather_alerts tool to fetch real data from the "
+                 "National Weather Service.",
+    tools=[get_weather_alerts],
+)
+
+result = await Runner.run(agent, "Are there any weather alerts for California?")
+print(result.final_output)
+```
+
+</CodeGroup>
+
+<Tip>
+The docstring is the tool's "manual" for the LLM. Write it clearly and include the expected input format—the LLM uses it to decide *when* and *how* to call the tool.
+</Tip>
+
+## The Agent → Tool → Response Loop
+
+Understanding the execution loop is key to reasoning about agent behaviour:
+
+```
+User query submitted to Runner.run()
+          ↓
+  LLM receives query + tool definitions
+          ↓
+  LLM decides: answer directly OR call a tool
+          ↓ (if tool chosen)
+  SDK invokes the Python function
+          ↓
+  Tool result appended to message history
+          ↓
+  LLM generates next response
+          ↓  (loop repeats if another tool call)
+  LLM produces final text response
+          ↓
+  result.final_output returned to caller
+```
+
+The LLM decides autonomously whether to use a tool on each turn. Your Python code handles the mechanics; the model handles the reasoning.
+
+## Handoffs: Multi-Agent Routing
+
+The `handoffs` parameter lets an agent transfer control to a **specialist agent**. The receiving agent takes over the conversation from that point. This pattern powers Exercise 4's language-routing workflow:
+
+```python
+from agents import Agent
+
+french_agent = Agent(
+    name="French Agent",
+    instructions="You only speak French. Respond naturally to user queries in French.",
+    model="gpt-4",
+)
+
+spanish_agent = Agent(
+    name="Spanish Agent",
+    instructions="You only speak Spanish. Respond naturally to user queries in Spanish.",
+    model="gpt-4",
+)
+
+english_agent = Agent(
+    name="English Agent",
+    instructions="You only speak English. Respond naturally to user queries in English.",
+    model="gpt-4",
+)
+
+triage_agent = Agent(
+    name="Triage Agent",
+    instructions=(
+        "Identify the primary language of the user's message. "
+        "Never answer directly. "
+        "Immediately hand off using one of the following rules: "
+        "- French → French Agent "
+        "- Spanish → Spanish Agent "
+        "- English → English Agent "
+        "If detection is uncertain or the language is unsupported, hand off to English Agent."
+    ),
+    handoffs=[french_agent, spanish_agent, english_agent],
+    model="gpt-4",
+)
+```
+
+When `Runner.run()` executes the triage agent and a handoff is triggered, the SDK transparently continues execution with the specialist agent—no extra code required.
+
+## `trace()`: Correlating Runs with OpenAI Traces
+
+`trace()` is a **context manager** that groups all SDK operations inside it under a single named trace in the OpenAI dashboard. In Exercise 4 it is used directly inside the Temporal workflow:
+
+```python
+from agents import Runner, TResponseInputItem, trace
+from temporalio import workflow
+
+@workflow.defn
+class RoutingWorkflow:
+    @workflow.run
+    async def run(self, msg: str) -> str:
+        with trace("Routing example"):
+            inputs: list[TResponseInputItem] = [{"content": msg, "role": "user"}]
+            result = await Runner.run(
+                triage_agent(),
+                input=inputs,
+            )
+            await workflow.sleep(timedelta(seconds=10))
+            return f"Response: {result.final_output}"
+```
+
+<Note>
+The `trace()` name appears in the OpenAI platform under **Traces**, letting you correlate a Temporal workflow execution ID with its corresponding LLM calls — invaluable for debugging production agents.
+</Note>
+
+## `RunConfig` and `TResponseInputItem`
+
+For more control over how the agent processes structured message lists (rather than a raw string), use `RunConfig` and `TResponseInputItem`:
+
+```python
+from agents import RunConfig, Runner, TResponseInputItem
+
+config = RunConfig()
+inputs: list[TResponseInputItem] = [{"content": "Bonjour!", "role": "user"}]
+
+result = await Runner.run(
+    triage_agent(),
+    input=inputs,
+    run_config=config,
+)
+```
+
+This is the pattern used in Exercise 4 where the workflow receives an arbitrary string and wraps it into a properly typed message list before handing it to the runner.
+
+## Summary of Key Imports
+
+```python
+from agents import (
+    Agent,           # Define an agent
+    Runner,          # Execute an agent
+    function_tool,   # Decorator: Python function → LLM tool
+    trace,           # Context manager for OpenAI tracing
+    RunConfig,       # Runtime configuration for Runner.run()
+    TResponseInputItem,  # Typed dict for structured message input
+)
+```
+
+<CardGroup cols={2}>
+  <Card title="Exercise 1: Agent Hello World" icon="robot" href="/exercises/agent-hello-world">
+    Build your first agent with a live weather tool and see the agent → tool → response loop in action.
+  </Card>
+  <Card title="Exercise 4: Agent Routing" icon="shuffle" href="/exercises/agent-routing">
+    Implement the triage agent with language-based handoffs to French, Spanish, and English specialists.
+  </Card>
+  <Card title="Temporal Fundamentals" icon="server" href="/concepts/temporal-fundamentals">
+    Learn how Temporal workflows, activities, and workers provide durable execution for your agents.
+  </Card>
+  <Card title="Durable AI Agents" icon="shield-check" href="/concepts/durable-ai-agents">
+    See how combining the Agents SDK with Temporal gives your agents automatic retries and crash recovery.
+  </Card>
+</CardGroup>

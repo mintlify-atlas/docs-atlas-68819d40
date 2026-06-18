@@ -1,0 +1,252 @@
+---
+title: "Run Your First Temporal Workflow with Activities"
+sidebarTitle: "Temporal Hello World"
+description: "Create a Temporal workflow that wraps a weather API call inside an activity, observe live execution history in the Temporal UI, and experience automatic retries first-hand."
+---
+
+This exercise introduces the two fundamental building blocks of every Temporal application: **workflows** and **activities**. You will wrap the same National Weather Service API call from Exercise 1 inside a proper Temporal activity, orchestrate it from a workflow, and watch the full execution history appear in the Temporal UI at `localhost:8233`.
+
+<Warning>
+  The Temporal dev server must be running before you start this exercise. Open `temporal_installation.ipynb` in the project root, run every cell, then go to the **Ports** tab in VS Code → find port **8233** → click the globe icon to confirm the UI loads.
+</Warning>
+
+<Info>
+  **Timebox: 15 minutes** — Work through `solutions/02_temporal_hello_world/solution.ipynb` together during the workshop. Afterwards, practice in `exercises/02_temporal_hello_world/exercise.ipynb`.
+</Info>
+
+## What You'll Learn
+
+<CardGroup cols={2}>
+  <Card title="Workflows & Activities" icon="sitemap">
+    Understand the difference between a workflow (orchestration logic) and an activity (a unit of work with side effects).
+  </Card>
+  <Card title="Temporal UI" icon="display">
+    Navigate the workflow list, drill into execution history, and read event-level detail for each activity attempt.
+  </Card>
+  <Card title="Automatic Retries" icon="rotate">
+    See how Temporal re-attempts a failing activity according to its retry policy—no application code required.
+  </Card>
+  <Card title="Durable Execution" icon="shield-check">
+    Kill the worker mid-execution, restart it, and observe the workflow resume from exactly where it stopped.
+  </Card>
+</CardGroup>
+
+## Goal
+
+Build a `HelloWorkflowTemporal` that invokes `get_weather_for_state("CA")` as a Temporal activity and returns the result. Observe the end-to-end execution in the Temporal UI and confirm automatic retry behaviour.
+
+## Architecture
+
+```
+Workflow Execution Request
+    ↓
+Temporal Workflow (orchestration)
+    ↓
+Temporal Activity (unit of work)
+    ↓
+[Call NWS API]
+    ↓
+Activity completes
+    ↓
+Workflow returns result
+    ↓
+Return to caller
+```
+
+**Key benefits:**
+- Activities automatically retry on failure
+- Workflow state persists across crashes
+- Full execution history is recorded in Temporal UI
+
+## Solution Walkthrough
+
+<Steps>
+  <Step title="Install dependencies and import Temporal">
+    ```python
+    import asyncio
+    from datetime import datetime, timedelta
+
+    import httpx
+    import nest_asyncio
+    import pytz
+    from temporalio import activity, workflow
+    from temporalio.client import Client
+    from temporalio.worker import UnsandboxedWorkflowRunner, Worker
+    ```
+
+    <Note>
+      `UnsandboxedWorkflowRunner` is required when running workflows inside a Jupyter notebook. Temporal's default sandbox restricts certain Python operations that Jupyter relies on (like importing modules dynamically). In production Python scripts you omit this parameter and use the default sandboxed runner.
+    </Note>
+  </Step>
+
+  <Step title="Define the activity">
+    Activities are decorated with `@activity.defn`. They represent the actual work: I/O calls, database queries, anything with side effects. Temporal tracks each attempt individually and can retry on failure.
+
+    ```python
+    @activity.defn
+    async def get_weather_for_state(state: str) -> str:
+        """Activity that fetches real weather alerts from National Weather Service API."""
+        activity.logger.info(f" Fetching weather alerts for {state}")
+
+        try:
+            url = f"https://api.weather.gov/alerts/active/area/{state.upper()}"
+            headers = {"User-Agent": "Temporal-Workshop (educational)"}
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=headers, timeout=10.0)
+                response.raise_for_status()
+
+                data = response.json()
+                features = data.get("features", [])
+
+                if not features:
+                    result = f"No active weather alerts for {state.upper()}."
+                    activity.logger.info("[OK] No active alerts found")
+                    return result
+
+                alerts = []
+                for feature in features[:3]:
+                    properties = feature.get("properties", {})
+                    event = properties.get("event", "Unknown")
+                    severity = properties.get("severity", "Unknown")
+                    alerts.append(f"- {event} ({severity})")
+
+                result = f"Active weather alerts for {state.upper()}:\n" + "\n".join(alerts)
+                activity.logger.info(f"[OK] Found {len(features)} alert(s)")
+                return result
+
+        except httpx.HTTPError as e:
+            error_msg = f"Failed to fetch weather alerts: {str(e)}"
+            activity.logger.error(f"[ERROR] {error_msg}")
+            return error_msg
+        except Exception as e:
+            error_msg = f"Unexpected error: {str(e)}"
+            activity.logger.error(f"[ERROR] {error_msg}")
+            return error_msg
+    ```
+  </Step>
+
+  <Step title="Define the workflow">
+    Workflows are decorated with `@workflow.defn`. The `@workflow.run` method is the entry point. Workflows must not perform I/O directly—all side effects happen in activities scheduled via `workflow.execute_activity()`.
+
+    ```python
+    @workflow.defn
+    class HelloWorkflowTemporal:
+        """Workflow that orchestrates the weather API activity call."""
+
+        @workflow.run
+        async def run(self, state: str) -> str:
+            workflow.logger.info(f" Workflow started for state: {state}")
+
+            result = await workflow.execute_activity(
+                get_weather_for_state,
+                args=[state],
+                start_to_close_timeout=timedelta(seconds=30),
+            )
+
+            workflow.logger.info("[OK] Workflow finished")
+            return f"Workflow result: {result}"
+    ```
+  </Step>
+
+  <Step title="Start the worker">
+    A worker polls a named task queue and executes any workflows or activities it is registered to handle.
+
+    ```python
+    async def run_worker():
+        """Start a Temporal worker that listens for workflow and activity tasks."""
+        client = await Client.connect(
+            "localhost:7233",
+        )
+
+        task_queue = "hello-temporal-task-queue"
+        worker = Worker(
+            client,
+            task_queue=task_queue,
+            workflows=[HelloWorkflowTemporal],
+            activities=[get_weather_for_state],
+            workflow_runner=UnsandboxedWorkflowRunner(),
+        )
+
+        print(f"[OK] Worker started on task queue: {task_queue}")
+        print("   Listening for workflow and activity tasks...")
+        await worker.run()
+
+    # Apply nest_asyncio to allow nested event loops in Jupyter
+    nest_asyncio.apply()
+    worker_task = asyncio.create_task(run_worker())
+    print(" Worker running in background")
+    ```
+  </Step>
+
+  <Step title="Execute the workflow">
+    The starter connects a second client and schedules the workflow. It uses `client.start_workflow()` to get a handle immediately, then `await handle.result()` to block until completion.
+
+    ```python
+    async def run_solution():
+        """Execute Temporal workflow to fetch weather alerts."""
+
+        # Generate a human-readable workflow ID using an EST timestamp
+        est = pytz.timezone("US/Eastern")
+        now = datetime.now(est)
+        workflow_id = f"weather-{now.strftime('%a-%b-%d-%I%M%S').lower()}est"
+
+        client = await Client.connect("localhost:7233")
+
+        print(f" Starting workflow: {workflow_id}")
+
+        task_queue = "hello-temporal-task-queue"
+        handle = await client.start_workflow(
+            HelloWorkflowTemporal.run,
+            "CA",                   # California state code
+            id=workflow_id,
+            task_queue=task_queue,
+        )
+
+        print(f"[OK] Workflow started: {handle.id}")
+        print(
+            f"🔗 View in Temporal UI: http://localhost:8233/namespaces/default/workflows/{workflow_id}\n"
+        )
+
+        result = await handle.result()
+        print(f" Workflow completed with result: {result}")
+
+    try:
+        loop = asyncio.get_running_loop()
+        await run_solution()
+    except RuntimeError:
+        asyncio.run(run_solution())
+    ```
+  </Step>
+</Steps>
+
+## Observing Execution in the Temporal UI
+
+After running the starter cell, open the Temporal UI link printed to the console. You will see:
+
+<CardGroup cols={2}>
+  <Card title="Workflow Timeline" icon="timeline">
+    A visual timeline of every event: WorkflowExecutionStarted, ActivityTaskScheduled, ActivityTaskStarted, ActivityTaskCompleted, WorkflowExecutionCompleted.
+  </Card>
+  <Card title="Activity Detail" icon="magnifying-glass">
+    Click any ActivityTask event to inspect the input arguments, output payload, attempt number, and timing for that specific execution.
+  </Card>
+  <Card title="Execution History" icon="list">
+    The append-only event log that is the source of truth for Temporal's durability guarantees. Every state transition is recorded here.
+  </Card>
+  <Card title="Worker Polling" icon="satellite-dish">
+    In a separate tab you can watch the `hello-temporal-task-queue` queue depth and see which workers are currently polling.
+  </Card>
+</CardGroup>
+
+## Stretch Goal
+
+<Accordion title="Kill the worker mid-execution and restart it">
+  1. Start a new workflow execution (re-run the starter cell).
+  2. Immediately cancel the `worker_task` background task in the notebook.
+  3. Watch the Temporal UI—the workflow enters a **Running** state waiting for a worker to pick up the pending activity.
+  4. Restart the worker by re-running the worker cell.
+  5. Observe the workflow resume and complete from the activity step, not from the beginning.
+
+  This is durable execution in action: the workflow's intent was safely stored in Temporal, and no work was lost.
+</Accordion>

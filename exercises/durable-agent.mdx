@@ -1,0 +1,337 @@
+---
+title: "Build a Production-Durable AI Agent with Temporal"
+sidebarTitle: "Durable Agent"
+description: "Combine OpenAI Agents SDK with Temporal's OpenAIAgentsPlugin to make every LLM call automatically retryable, observable, and crash-proof—without changing your agent code."
+---
+
+This is **the key exercise** of the workshop. You take the agent from Exercise 1 and the Temporal primitives from Exercise 2 and snap them together using `temporalio.contrib.openai_agents`. The result is a production-ready AI agent where every LLM call runs as a Temporal activity—automatically retried on failure, fully observable in the UI, and persistent across crashes.
+
+<Warning>
+  The Temporal dev server must be running before you run any cell in this notebook. Open `temporal_installation.ipynb`, run every cell, and confirm the UI opens at the port **8233** forwarded address before proceeding.
+</Warning>
+
+<Info>
+  **Timebox: 15 minutes** — Work through `solutions/03_durable_agent/solution.ipynb` together during the workshop. Afterwards, practice in `exercises/03_durable_agent/exercise.ipynb`.
+</Info>
+
+## What You'll Learn
+
+<CardGroup cols={2}>
+  <Card title="OpenAIAgentsPlugin" icon="plug">
+    Register Temporal's official plugin to make the Agents SDK route every model call through a Temporal activity automatically.
+  </Card>
+  <Card title="Automatic Retries" icon="rotate">
+    Watch Temporal retry a failing LLM or tool activity without any explicit retry code in your agent.
+  </Card>
+  <Card title="State Persistence" icon="database">
+    Crash the worker mid-execution and restart it—the workflow resumes from the exact activity that was in-progress.
+  </Card>
+  <Card title="Trace Correlation" icon="magnifying-glass">
+    Correlate the Temporal workflow ID with the OpenAI trace ID to debug agent decisions alongside infrastructure events.
+  </Card>
+</CardGroup>
+
+## Goal
+
+Build `WeatherAgentWorkflow`, a Temporal workflow that internally creates an OpenAI agent and runs it under `OpenAIAgentsPlugin` so that each LLM inference call becomes a durable Temporal activity. Demonstrate a failure-and-recovery cycle using the `make_api_call_bug` function.
+
+## Architecture
+
+```
+User Query
+    ↓
+Temporal Workflow (orchestration layer)
+    ↓
+Activity: LLM interprets query and may choose tool
+    ↓
+[Tool chosen?]
+    ↓
+Activity: Execute get_weather tool
+    ↓
+External API Call (api.weather.gov)
+    ↓
+Data returned to Agent
+    ↓
+Agent generates natural-language response
+    ↓
+Return to user
+```
+
+**Each activity retries independently. The entire flow is durable.**
+
+## The Key Insight
+
+<Tip>
+  Your agent code doesn't change—Temporal wraps it with superpowers! The `OpenAIAgentsPlugin` intercepts the Agents SDK's model calls and executes them as Temporal activities behind the scenes. You keep writing idiomatic OpenAI Agents SDK code; Temporal handles the durability layer.
+</Tip>
+
+## Solution Walkthrough
+
+<Steps>
+  <Step title="Install dependencies and import everything">
+    The critical new imports are `OpenAIAgentsPlugin` and `ModelActivityParameters` from `temporalio.contrib.openai_agents`.
+
+    ```python
+    %pip install --quiet temporalio openai-agents httpx nest-asyncio pytz
+
+    import asyncio
+    from datetime import datetime, timedelta
+
+    import httpx
+    import nest_asyncio
+    import pytz
+    from agents import Agent, Runner
+    from temporalio import activity, workflow
+    from temporalio.client import Client
+    from temporalio.contrib import openai_agents
+    from temporalio.contrib.openai_agents import ModelActivityParameters, OpenAIAgentsPlugin
+    from temporalio.worker import Worker
+
+    print("[OK] All imports successful")
+    ```
+  </Step>
+
+  <Step title="Define the weather activity">
+    This is a standard Temporal activity, exactly as in Exercise 2. Notice `make_api_call_bug` is provided to let you simulate a transient failure and watch Temporal retry it.
+
+    ```python
+    async def make_api_call(state: str) -> dict:
+        """Make API call to fetch weather alerts from National Weather Service."""
+        headers = {"User-Agent": "Temporal-Agents-Workshop/1.0 (educational@example.com)"}
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"https://api.weather.gov/alerts/active/area/{state}",
+                headers=headers
+            )
+            r.raise_for_status()
+            data = r.json()
+        return data
+
+    async def make_api_call_bug(state: str) -> dict:
+        """Make API call with intentional bug - simulates a failing service."""
+        raise Exception("Simulated API failure: Service temporarily unavailable")
+
+    @activity.defn(name="get_weather")
+    async def get_weather(state: str) -> dict:
+        """Fetch active NWS alerts for a 2-letter US state code (e.g., 'CA')."""
+        data = await make_api_call(state)
+
+        # Swap to make_api_call_bug(state) to simulate a failure:
+        # data = await make_api_call_bug(state)
+
+        alerts = []
+        for f in (data.get("features") or [])[:5]:
+            p = f.get("properties", {})
+            alerts.append({
+                "event": p.get("event"),
+                "headline": p.get("headline"),
+                "severity": p.get("severity"),
+                "area": p.get("areaDesc"),
+            })
+
+        return {"state": state.upper(), "count": len(alerts), "alerts": alerts}
+
+    print("[OK] Activity 'get_weather' defined")
+    ```
+  </Step>
+
+  <Step title="Define the workflow">
+    The workflow creates the `Agent` inside `@workflow.run` and wraps the `get_weather` activity as a tool using `openai_agents.workflow.activity_as_tool()`. This is the bridge between the Agents SDK tool-calling protocol and Temporal activities.
+
+    ```python
+    TASK_QUEUE = "agents-sdk-queue"
+
+    @workflow.defn(sandboxed=False)  # Disable sandbox for Jupyter compatibility
+    class WeatherAgentWorkflow:
+        @workflow.run
+        async def run(self, user_query: str) -> str:
+            # Create the Agent inside the workflow with tools and instructions
+            agent = Agent(
+                name="Weather Assistant",
+                instructions=(
+                    "You are a helpful assistant that explains current weather alerts for U.S. states. "
+                ),
+                tools=[
+                    # Convert Temporal activity to Agent tool for durable execution
+                    openai_agents.workflow.activity_as_tool(
+                        get_weather,
+                        start_to_close_timeout=timedelta(seconds=10),
+                    )
+                ],
+            )
+
+            # Run the agent — tool calls execute as Temporal activities
+            result = await Runner().run(agent, user_query)
+
+            return getattr(result, "final_output", str(result))
+
+    print(f"[OK] Workflow 'WeatherAgentWorkflow' defined (task queue: {TASK_QUEUE})")
+    ```
+
+    <Note>
+      `sandboxed=False` is required when running inside a Jupyter notebook. Temporal's default workflow sandbox uses a deterministic Python runtime that restricts certain imports. In production `.py` files you can use the default (sandboxed) runner.
+    </Note>
+  </Step>
+
+  <Step title="Start the worker with OpenAIAgentsPlugin">
+    Registering `OpenAIAgentsPlugin` on the client is what activates the durable-LLM-call mechanism. `ModelActivityParameters` lets you configure timeouts, retry policies, and other activity-level settings for every model inference call.
+
+    ```python
+    async def run_worker():
+        """Start a Temporal worker that listens for workflow and activity tasks."""
+        client = await Client.connect(
+            "localhost:7233",
+            plugins=[
+                OpenAIAgentsPlugin(
+                    model_params=ModelActivityParameters(
+                        start_to_close_timeout=timedelta(seconds=30)
+                    )
+                )
+            ],
+        )
+
+        worker = Worker(
+            client,
+            task_queue=TASK_QUEUE,
+            workflows=[WeatherAgentWorkflow],
+            activities=[get_weather],
+        )
+
+        print(f"[OK] Worker started on task queue: {TASK_QUEUE}")
+        print("   Listening for workflow and activity tasks...")
+        await worker.run()
+
+    nest_asyncio.apply()
+    worker_task = asyncio.create_task(run_worker())
+    first_worker_task = worker_task
+    print(" Worker running in background")
+    ```
+  </Step>
+
+  <Step title="Execute the workflow (starter)">
+    The starter also needs `OpenAIAgentsPlugin` registered on its client so that it can correctly serialize and deserialize agent-specific payloads.
+
+    ```python
+    async def run_solution():
+        """Execute the weather agent workflow."""
+        query = "What weather alerts are active in CA?"
+
+        est = pytz.timezone('US/Eastern')
+        now = datetime.now(est)
+        workflow_id = f"weather-{now.strftime('%a-%b-%d-%I%M%S').lower()}est"
+
+        client = await Client.connect(
+            "localhost:7233",
+            plugins=[OpenAIAgentsPlugin()]
+        )
+
+        print(f" Starting workflow: {workflow_id}")
+        print(f" Query: {query}\n")
+
+        handle = await client.start_workflow(
+            WeatherAgentWorkflow.run,
+            query,
+            id=workflow_id,
+            task_queue=TASK_QUEUE
+        )
+
+        print(f"[OK] Workflow started: {handle.id}")
+        print(f"🔗 View in Temporal UI: http://localhost:8233/namespaces/default/workflows/{workflow_id}\n")
+        print(" Waiting for agent response...\n")
+
+        result = await handle.result()
+
+        print("=" * 60)
+        print(" Agent Response:")
+        print("=" * 60)
+        print(result)
+        print("=" * 60)
+
+    try:
+        loop = asyncio.get_running_loop()
+        await run_solution()
+    except RuntimeError:
+        asyncio.run(run_solution())
+    ```
+  </Step>
+</Steps>
+
+## Simulating Failure and Recovery
+
+The real magic of durable execution becomes tangible when you simulate a failure. The notebook includes a dedicated section for this:
+
+<Steps>
+  <Step title="Introduce a bug in the activity">
+    In the activity cell, swap `make_api_call(state)` for `make_api_call_bug(state)` by changing:
+
+    ```python
+    # Change this:
+    data = await make_api_call(state)
+
+    # To this:
+    data = await make_api_call_bug(state)
+    ```
+
+    Re-run the activity cell, then re-run the worker and starter cells.
+  </Step>
+
+  <Step title="Watch automatic retries in the Temporal UI">
+    Open the workflow in the Temporal UI. You will see the `get_weather` activity being retried with exponential backoff. The workflow stays in **Running** state—it has not failed; it is waiting for the activity to succeed.
+  </Step>
+
+  <Step title="Fix the bug and restart the worker">
+    Revert the activity call back to `make_api_call(state)`, then cancel and restart the worker:
+
+    ```python
+    # Cancel the first worker and wait for it to stop
+    first_worker_task.cancel()
+    try:
+        await first_worker_task
+    except asyncio.CancelledError:
+        pass
+
+    # Now start the new worker with the fixed code
+    worker_task = asyncio.create_task(run_worker())
+    print("New worker started!")
+    ```
+  </Step>
+
+  <Step title="Observe successful completion">
+    Refresh the Temporal UI. The `get_weather` activity now completes. The workflow shows **Completed** status. Crucially, the expensive LLM call that ran before the bug was never re-executed—Temporal resumed from exactly the failing activity.
+  </Step>
+</Steps>
+
+## Temporal UI Correlation
+
+When the workflow completes you will see two IDs you can correlate:
+
+| ID | Where to Find It | Purpose |
+|----|-----------------|---------|
+| Temporal Workflow ID | Temporal UI → Workflow list | Identifies this specific workflow execution end-to-end |
+| OpenAI Trace ID | Temporal UI → Activity inputs/outputs | Correlates with traces in the OpenAI platform dashboard |
+
+This cross-system traceability is invaluable for debugging production agents.
+
+## Stretch Goal
+
+<Accordion title="Add explicit retry options to ModelActivityParameters">
+  By default, Temporal retries activities indefinitely with exponential backoff. You can customise this behaviour by passing `retry_policy` to `ModelActivityParameters`:
+
+  ```python
+  from temporalio.common import RetryPolicy
+
+  OpenAIAgentsPlugin(
+      model_params=ModelActivityParameters(
+          start_to_close_timeout=timedelta(seconds=30),
+          retry_policy=RetryPolicy(
+              maximum_attempts=3,
+              initial_interval=timedelta(seconds=1),
+              backoff_coefficient=2.0,
+              maximum_interval=timedelta(seconds=10),
+          )
+      )
+  )
+  ```
+
+  Change `maximum_attempts` to `3`, trigger `make_api_call_bug`, and watch the workflow fail definitively after the third attempt. Then explore how the workflow transitions to a **Failed** terminal state versus the indefinite **Running** state you saw before.
+</Accordion>

@@ -1,0 +1,323 @@
+---
+title: "Troubleshooting Common Workshop Setup & Runtime Issues"
+sidebarTitle: "Troubleshooting"
+description: "Fix OPENAI_API_KEY errors, Temporal server problems, notebook kernel issues, worker timeouts, and Jupyter async errors in the OpenAI Agents SDK workshop."
+---
+
+This page covers the most common issues encountered during the Temporal + OpenAI Agents SDK workshop — from environment setup errors to Temporal worker configuration problems. Each section explains what causes the problem, how to diagnose it, and the exact steps to fix it.
+
+<Tip>
+  Before diving into a specific issue, run `make env` to check your API key and
+  `pgrep -f temporal` to verify Temporal is running. These two checks resolve
+  the majority of workshop issues.
+</Tip>
+
+## Environment Issues
+
+<AccordionGroup>
+  <Accordion title="OPENAI_API_KEY not found" icon="key">
+    **Symptom:** An exercise fails immediately with an error like `AuthenticationError`, `OPENAI_API_KEY is not set`, or `ERROR: .env file not found`.
+
+    **Diagnosis:**
+
+    ```bash
+    # Check whether .env exists
+    ls -la .env
+
+    # Check whether the key is set and non-empty
+    python scripts/check_env.py
+    # or
+    make env
+    ```
+
+    **Fix:**
+
+    If `.env` doesn't exist, create it from the sample template:
+
+    ```bash
+    cp .env.sample .env
+    ```
+
+    Then open `.env` in your editor and replace the placeholder with your real key:
+
+    ```bash
+    OPENAI_API_KEY=sk-proj-your-real-key-here
+    ```
+
+    Get a key at [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys). The workshop uses approximately $0.50–$1.00 of API credits — the free tier is sufficient.
+
+    <Warning>
+      Never commit `.env` to version control. It's listed in `.gitignore` by
+      default, but double-check before pushing.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Temporal server not running" icon="server">
+    **Symptom:** Exercises 2, 3, or 4 fail with `Failed to connect to Temporal server`, `connection refused on localhost:7233`, or the Temporal UI is unreachable at port 8233.
+
+    **Diagnosis:**
+
+    ```bash
+    # Check whether the Temporal server process is running
+    pgrep -f temporal
+    ```
+
+    If this returns no output, the server is not running.
+
+    **Fix:**
+
+    Use the `temporal_installation.ipynb` notebook (recommended):
+
+    1. Open `temporal_installation.ipynb` in VS Code
+    2. Run each cell in order — this installs the Temporal CLI and starts the dev server
+    3. **In Codespaces:** Go to the **Ports** tab at the bottom of VS Code → Find port **8233** → Click the **Globe icon** to open the Temporal Web UI
+
+    Alternatively, start Temporal via the Makefile:
+
+    ```bash
+    make temporal-up
+    ```
+
+    <Note>
+      Temporal must be running for exercises 2, 3, and 4. Exercise 1 (OpenAI
+      agent basics) does not require Temporal and can run without it.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## Dependency & Import Issues
+
+<AccordionGroup>
+  <Accordion title="Import errors or module not found" icon="triangle-exclamation">
+    **Symptom:** `ModuleNotFoundError: No module named 'agents'`, `No module named 'temporalio'`, or similar import errors when running an exercise.
+
+    **Fix:**
+
+    Reinstall all dependencies from the project root:
+
+    ```bash
+    make setup
+    # or equivalently:
+    pip install -e ".[dev]"
+    ```
+
+    The `-e` flag installs the project in editable mode, which means Python picks up any local source changes without a reinstall.
+
+    <Warning>
+      Run `make setup` again after every `git pull`. Dependency updates in
+      `pyproject.toml` are not applied automatically — you must re-run the
+      install.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Tests fail with 'module not found'" icon="flask">
+    **Symptom:** Running `make test` or `pytest` produces `ModuleNotFoundError` even though the packages seem to be installed.
+
+    **Cause:** The project must be installed in editable mode from the **repository root** for test imports to resolve correctly. Running `pytest` from a subdirectory or without the editable install breaks the import path.
+
+    **Fix:**
+
+    ```bash
+    # Navigate to the project root first
+    cd /path/to/temporal-openai-agents-sdk
+
+    # Re-install in editable mode
+    pip install -e ".[dev]"
+
+    # Then run tests
+    pytest -v
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Notebook Issues
+
+<AccordionGroup>
+  <Accordion title="Notebook kernel not found" icon="circle-question">
+    **Symptom:** VS Code shows "Select Kernel" when you open an `.ipynb` file, or the kernel picker doesn't include a `temporal-workshop` option.
+
+    **Fix:**
+
+    Install `ipykernel` and register a named kernel for the workshop environment:
+
+    ```bash
+    pip install ipykernel
+    python -m ipykernel install --user --name temporal-workshop
+    ```
+
+    Then, in VS Code:
+    1. Open any workshop notebook (`.ipynb`)
+    2. Click **Select Kernel** in the top-right corner
+    3. Choose **temporal-workshop** from the list
+
+    Restart VS Code if the kernel doesn't appear after running the commands above.
+  </Accordion>
+
+  <Accordion title="Can't access Temporal UI at localhost:8233" icon="globe">
+    **Symptom:** Opening `http://localhost:8233` in your browser shows "This site can't be reached", or the port isn't available locally.
+
+    **Fix (GitHub Codespaces):**
+
+    Port forwarding in Codespaces is managed through the VS Code Ports tab, not via a direct `localhost` address in your local browser:
+
+    1. Go to the **Ports** tab at the bottom of VS Code (next to Terminal)
+    2. Find **port 8233** in the list — it's labeled "Temporal UI"
+    3. Click the **Globe icon** (🌐) to open it in your browser
+
+    If you need to share the UI with someone else, right-click port 8233 and set **Port Visibility** to **Public**.
+
+    If port 8233 doesn't appear in the Ports tab, confirm the Temporal server is running:
+
+    ```bash
+    pgrep -f temporal
+    # or restart it:
+    make temporal-up
+    ```
+  </Accordion>
+
+  <Accordion title="Synchronous activity errors in Jupyter" icon="bolt">
+    **Symptom:** Running a Temporal `Worker` inside a Jupyter notebook raises errors about synchronous activities or the event loop, such as `RuntimeError: This event loop is already running` or `SynchronousActivityError`.
+
+    **Cause:** Jupyter runs its own asyncio event loop. Temporal's default `Worker` configuration expects to manage the loop itself, which conflicts with the notebook environment.
+
+    **Fix:**
+
+    Pass `workflow_runner=UnsandboxedWorkflowRunner()` and `debug_mode=True` to the `Worker` constructor:
+
+    ```python
+    from temporalio.worker import Worker, UnsandboxedWorkflowRunner
+
+    worker = Worker(
+        client,
+        task_queue="my-task-queue",
+        workflows=[MyWorkflow],
+        activities=[my_activity],
+        workflow_runner=UnsandboxedWorkflowRunner(),
+        debug_mode=True,
+    )
+    ```
+
+    Also ensure that all activity functions defined in notebooks use `async def` rather than plain `def`:
+
+    ```python
+    # ✅ Correct — async activity
+    async def call_llm_activity(prompt: str) -> str:
+        ...
+
+    # ❌ Incorrect in Jupyter — sync activities cause event loop conflicts
+    def call_llm_activity(prompt: str) -> str:
+        ...
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Exercise 4 — Worker & Routing Issues
+
+<AccordionGroup>
+  <Accordion title="Worker not picking up tasks" icon="gears">
+    **Symptom:** `starter.py` submits a workflow that stays stuck in the "Running" state in the Temporal UI. The worker terminal shows no activity after the workflow is submitted.
+
+    **Diagnosis checklist:**
+
+    1. Confirm the worker is running and showing `⏳ Polling for tasks...` in Terminal 1
+    2. Check that the `TASK_QUEUE` constant in `worker.py` and `starter.py` both equal `"routing-workflow-queue"` — a mismatch means the worker is listening on the wrong queue
+    3. Look at the worker terminal for any Python tracebacks or error messages
+
+    **Fix:**
+
+    ```bash
+    # In worker.py and starter.py, verify the constant:
+    TASK_QUEUE = "routing-workflow-queue"
+    ```
+
+    If task queue names match and the worker is still idle, stop and restart the worker:
+
+    ```bash
+    # Press Ctrl+C in Terminal 1 to stop the worker, then restart:
+    python worker.py
+    ```
+  </Accordion>
+
+  <Accordion title="Temporal Activity timeouts" icon="clock">
+    **Symptom:** Workflow execution fails with `ActivityError` or `StartToCloseTimeoutError` after a long wait. The Temporal UI shows an activity that timed out.
+
+    **Cause:** The default `start_to_close_timeout` on `ModelActivityParameters` may be too short for the model you're using. GPT-4 is significantly slower than GPT-4o-mini and can exceed a 30-second timeout under load.
+
+    **Fix:**
+
+    Increase `start_to_close_timeout` when creating the `OpenAIAgentsPlugin`:
+
+    ```python
+    from datetime import timedelta
+    from temporalio.contrib.openai_agents import OpenAIAgentsPlugin, ModelActivityParameters
+
+    client = await Client.connect(
+        "localhost:7233",
+        plugins=[
+            OpenAIAgentsPlugin(
+                model_params=ModelActivityParameters(
+                    start_to_close_timeout=timedelta(seconds=60)  # increase from 30s
+                )
+            )
+        ],
+    )
+    ```
+
+    As a general rule, use `gpt-4o-mini` for workshop exercises to minimize latency and cost. Switch to `gpt-4` only when accuracy requires it and adjust the timeout accordingly.
+  </Accordion>
+</AccordionGroup>
+
+## Additional Resources
+
+If you're still blocked after working through the sections above, the following resources provide deeper reference material for both Temporal and the OpenAI Agents SDK.
+
+<CardGroup cols={2}>
+  <Card
+    title="Temporal Documentation"
+    icon="book-open"
+    href="https://docs.temporal.io/"
+  >
+    The complete reference for Temporal concepts, SDKs, server configuration,
+    and deployment guides.
+  </Card>
+  <Card
+    title="OpenAI API Reference"
+    icon="microchip-ai"
+    href="https://platform.openai.com/docs/api-reference"
+  >
+    Full API reference for models, chat completions, tool calling, and the
+    OpenAI platform.
+  </Card>
+  <Card
+    title="OpenAI Agents SDK"
+    icon="robot"
+    href="https://openai.github.io/openai-agents-python/"
+  >
+    Official documentation for the OpenAI Agents SDK — agents, runners, tools,
+    handoffs, and tracing.
+  </Card>
+  <Card
+    title="Temporal Python SDK"
+    icon="python"
+    href="https://docs.temporal.io/dev-guide/python"
+  >
+    Python-specific developer guide covering workflows, activities, workers,
+    schedules, and testing.
+  </Card>
+  <Card
+    title="Temporal Samples — Agent Patterns"
+    icon="code"
+    href="https://github.com/temporalio/samples-python/tree/main/openai_agents/agent_patterns"
+  >
+    Production-ready sample code showing common agent patterns built with
+    Temporal and the OpenAI Agents SDK.
+  </Card>
+  <Card
+    title="Workshop Slides"
+    icon="presentation-screen"
+    href="https://docs.google.com/presentation/d/1ZKj-PUm8-swnwP7jQPyQNMs4NIBAuCuglU3iByWn4CM/"
+  >
+    The slide deck used during the live workshop session covering architecture,
+    key concepts, and exercise walkthroughs.
+  </Card>
+</CardGroup>

@@ -1,0 +1,209 @@
+---
+title: "Makefile Commands Reference for Workshop Tasks"
+sidebarTitle: "Makefile Commands"
+description: "Every make target in the Temporal + OpenAI Agents SDK workshop — what each command runs, when to use it, and how setup, lint, test, and Temporal targets work."
+---
+
+The workshop repository ships a `Makefile` that wraps the most common development tasks into short, memorable commands. This page documents every target — the exact shell command it runs, its purpose, and any important caveats to keep in mind during the 90-minute session.
+
+<Tip>
+  Run `make setup` first thing every time you open the project or pull new
+  changes. All other targets assume dependencies are already installed.
+</Tip>
+
+## Command Overview
+
+| Target | Command run | Purpose |
+|--------|-------------|---------|
+| `make setup` | `pip install -e ".[dev]"` | Install all Python dependencies in editable mode |
+| `make env` | `python scripts/check_env.py` | Validate `OPENAI_API_KEY` is set in `.env` |
+| `make lint` | `ruff check .` then `mypy exercises/ solutions/ scripts/` | Run code quality checks |
+| `make test` | `pytest -v` | Run the full test suite |
+| `make temporal-up` | `bash scripts/run_temporal.sh` | Start the Temporal dev server (idempotent) |
+| `make temporal-down` | `pkill -f "temporal server start-dev"` | Stop the Temporal dev server |
+| `make clean` | Remove `__pycache__`, `.pytest_cache`, `.mypy_cache` | Delete generated cache directories |
+
+## Detailed Reference
+
+<AccordionGroup>
+  <Accordion title="make setup — Install dependencies" icon="box-open">
+    ```bash
+    pip install -e ".[dev]"
+    ```
+
+    Installs the project and all its dependencies in **editable mode** so Python can import any module in the repository without an extra install step after you edit a file. The `[dev]` extra pulls in the testing and linting tools — `pytest`, `pytest-asyncio`, `ruff`, and `mypy` — in addition to the runtime dependencies (`openai`, `openai-agents`, `temporalio`, `jupyter`, `ipykernel`, `python-dotenv`, `rich`, `nest-asyncio`, etc.).
+
+    **When to run:** Once after the Codespace starts (this is done automatically by `bootstrap.sh`), and again every time you run `git pull` to pick up any new or updated dependencies.
+
+    ```bash
+    make setup
+    # Installing dependencies...
+    # Setup complete!
+    ```
+  </Accordion>
+
+  <Accordion title="make env — Validate OPENAI_API_KEY" icon="key">
+    ```bash
+    python scripts/check_env.py
+    ```
+
+    Runs `scripts/check_env.py`, which loads `.env` via `python-dotenv` and verifies that `OPENAI_API_KEY` is present and non-empty. If the check passes, it prints the first eight and last four characters of the key so you can confirm the correct key is loaded. If the check fails — because `.env` doesn't exist, or the key is missing — it prints a specific error message and exits with a non-zero status code.
+
+    **When to run:** Before starting exercises 1, 3, and 4, all of which make live OpenAI API calls.
+
+    ```bash
+    make env
+    # SUCCESS: Environment configured correctly
+    #    OPENAI_API_KEY: sk-proj-...Xk3f
+    ```
+  </Accordion>
+
+  <Accordion title="make lint — Code quality checks" icon="magnifying-glass-chart">
+    ```bash
+    ruff check .
+    mypy exercises/ solutions/ scripts/
+    ```
+
+    Runs two linters in sequence:
+
+    1. **`ruff check .`** — Fast Python linter checking for style errors (E), undefined names (F), import ordering (I), naming conventions (N), and warnings (W). Line length is set to 100 characters with E501 ignored. Target version is Python 3.11.
+    2. **`mypy exercises/ solutions/ scripts/`** — Static type checker targeting Python 3.11. `warn_return_any` and `warn_unused_configs` are enabled; `disallow_untyped_defs` is off to keep exercise starter code approachable.
+
+    **When to run:** Before submitting code or if you want to catch type errors in your exercise solutions.
+
+    ```bash
+    make lint
+    # Running ruff...
+    # Running mypy...
+    ```
+  </Accordion>
+
+  <Accordion title="make test — Run the test suite" icon="flask">
+    ```bash
+    pytest -v
+    ```
+
+    Runs the full test suite with verbose output. Tests are located in the `tests/` directory and are discovered via the `test_*.py` filename pattern (configured in `pyproject.toml`). The `pytest-asyncio` plugin handles async test functions automatically (`asyncio_mode = "auto"`).
+
+    **Important:** All tests mock the OpenAI API — no real `OPENAI_API_KEY` is required to run the test suite. This means CI runs `pytest -q` without any secrets configured, making it safe to run in pull request pipelines.
+
+    **When to run:** After making changes to exercise or solution code to confirm nothing is broken.
+
+    ```bash
+    make test
+    # Running tests...
+    # collected N items
+    # tests/test_... PASSED
+    ```
+
+    <Note>
+      Tests use mocked OpenAI calls, so they run offline and do not consume API
+      credits. You can run `make test` freely without worrying about cost.
+    </Note>
+  </Accordion>
+
+  <Accordion title="make temporal-up — Start Temporal server" icon="server">
+    ```bash
+    bash scripts/run_temporal.sh
+    ```
+
+    Starts the Temporal development server **idempotently** — if a `temporal server start-dev` process is already running, the script exits immediately without starting a duplicate. When starting fresh, it launches the server in the background with a persistent SQLite database at `~/.temporal/default.db`, waits three seconds, and confirms the process is alive.
+
+    - **gRPC endpoint:** `localhost:7233` (used by workers and starters to connect)
+    - **Web UI:** `localhost:8233` (open in your browser to observe workflows)
+
+    **When to run:** Before exercises 2, 3, and 4. Exercise 1 (OpenAI agent basics) does not require Temporal.
+
+    ```bash
+    make temporal-up
+    # Starting Temporal dev server...
+    #   Server: localhost:7233
+    #   UI: http://localhost:8233
+    # SUCCESS: Temporal server started (PID: 12345)
+    ```
+
+    <Tip>
+      In GitHub Codespaces, access the UI via the **Ports** tab at the bottom
+      of VS Code. Find port **8233** and click the **Globe icon** to open the
+      Temporal Web UI in your browser.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="make temporal-down — Stop Temporal server" icon="circle-stop">
+    ```bash
+    pkill -f "temporal server start-dev" || echo "Temporal not running"
+    ```
+
+    Sends a termination signal to any process whose command line matches `temporal server start-dev`. If no matching process is found, it prints `"Temporal not running"` and exits cleanly without an error. The in-memory workflow state is lost when the server stops, but the SQLite database at `~/.temporal/default.db` persists workflow history across restarts.
+
+    **When to run:** When you're done with exercises that require Temporal and want to free up resources, or when you need to restart the server after a crash.
+
+    ```bash
+    make temporal-down
+    # Stopping Temporal server...
+    ```
+  </Accordion>
+
+  <Accordion title="make clean — Remove cache directories" icon="broom">
+    ```bash
+    find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+    find . -type d -name ".mypy_cache"  -exec rm -rf {} + 2>/dev/null || true
+    ```
+
+    Recursively removes all `__pycache__`, `.pytest_cache`, and `.mypy_cache` directories from the entire repository tree. Errors (e.g., a directory already being deleted) are suppressed. This is safe to run at any time and does not affect source files, notebooks, or `.env`.
+
+    **When to run:** If you're seeing stale import errors or mypy is reporting errors from deleted files, a clean sweep often resolves them.
+
+    ```bash
+    make clean
+    # Cleaning up...
+    # Clean complete!
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Running Exercise 4 (Production Pattern)
+
+Exercises 1–3 are Jupyter notebooks you open in VS Code. Exercise 4 uses separate Python files that mirror a real production Temporal deployment. You need **two terminals** running simultaneously:
+
+<Steps>
+  <Step title="Start the Temporal server">
+    If Temporal isn't already running, start it first:
+
+    ```bash
+    make temporal-up
+    ```
+  </Step>
+  <Step title="Start the worker (Terminal 1)">
+    The worker process connects to Temporal and polls the `"routing-workflow-queue"` task queue for work:
+
+    ```bash
+    cd solutions/04_agent_routing
+    python worker.py
+    # 🚀 Worker started successfully
+    # 📋 Task Queue: routing-workflow-queue
+    # ⏳ Polling for tasks... (Press Ctrl+C to stop)
+    ```
+
+    Leave this terminal open — the worker must remain running.
+  </Step>
+  <Step title="Submit the workflow (Terminal 2)">
+    The starter script connects to Temporal and submits a workflow execution:
+
+    ```bash
+    cd solutions/04_agent_routing
+    python starter.py
+    # 🚀 Starting Routing Workflow
+    # ✅ Workflow started: routing-wed-oct-16-103045est
+    # ⏳ Waiting for agent response...
+    # 💬 Agent Response: Response: She sells seashells by the seashore.
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  The task queue name `"routing-workflow-queue"` must match in both `worker.py`
+  and `starter.py`. If the worker isn't picking up tasks, this is the first
+  thing to verify.
+</Note>

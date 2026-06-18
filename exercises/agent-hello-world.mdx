@@ -1,0 +1,270 @@
+---
+title: "Build Your First OpenAI Agent with Tool Calling"
+sidebarTitle: "Agent Hello World"
+description: "Create a weather-alert AI agent using OpenAI Agents SDK's @function_tool decorator, learn how LLMs decide when to call tools, and query the National Weather Service API."
+---
+
+In this first exercise you build a working AI agent from scratch using the **OpenAI Agents SDK**. By wiring a `@function_tool`-decorated function to a real HTTP API, you see exactly how the agent→tool→response loop works—no mocking, no stubs, just live weather data from the National Weather Service.
+
+<Info>
+  **Timebox: 15 minutes** — During the workshop, run through `solutions/01_agent_hello_world/solution.ipynb` together. Afterwards, practice building it yourself in `exercises/01_agent_hello_world/exercise.ipynb`.
+</Info>
+
+## What You'll Learn
+
+<CardGroup cols={2}>
+  <Card title="Tool Calling Basics" icon="wrench">
+    Decorate any async function with `@function_tool` to expose it to the LLM as a callable action.
+  </Card>
+  <Card title="Agent → Tool → Response Flow" icon="arrow-right-arrow-left">
+    Trace the full lifecycle: the LLM receives a query, decides it needs a tool, calls it, reads the result, and forms a final answer.
+  </Card>
+  <Card title="LLM Decision Making" icon="brain">
+    Understand when and why a model chooses to invoke a tool versus answering directly from its training data.
+  </Card>
+  <Card title="Real API Integration" icon="globe">
+    Call a live public API—the National Weather Service—and surface the results inside an agent response.
+  </Card>
+</CardGroup>
+
+## Goal
+
+Create a **Weather Agent** that accepts a natural-language question about US weather alerts, calls `https://api.weather.gov/alerts/active/area/{state}` via `get_weather_alerts`, and returns a readable summary.
+
+Expected output for the default query _"Are there any weather alerts for California?"_:
+
+```
+Agent Response:
+Currently in California (CA), there are several active weather alerts...
+```
+
+## Architecture
+
+```
+User Query
+    ↓
+LLM interprets query and may choose tool
+    ↓
+Tool Function: get_weather_alerts()
+    ↓
+External API Call (api.weather.gov)
+    ↓
+Data returned to Agent
+    ↓
+Agent generates natural-language response
+    ↓
+Return to user
+```
+
+## Solution Walkthrough
+
+<Steps>
+  <Step title="Install dependencies and import the SDK">
+    The OpenAI Agents SDK ships as `openai-agents`. `nest_asyncio` lets you run `asyncio.run()` inside a Jupyter notebook's existing event loop.
+
+    ```python
+    %pip install --quiet openai-agents httpx python-dotenv nest-asyncio
+
+    import asyncio
+    import os
+
+    import httpx
+    import nest_asyncio
+    from agents import Agent, Runner, function_tool
+    from dotenv import load_dotenv
+
+    if not globals().get("ENV_LOADED", False):
+        load_dotenv()
+        ENV_LOADED = True
+        env_status = "Loaded environment variables from .env"
+    else:
+        env_status = "Environment variables already loaded"
+
+    print("\n Exercise 1: Agent Hello World - Solution\n")
+    print(f"[OK] {env_status}")
+    ```
+  </Step>
+
+  <Step title="Define the weather tool with @function_tool">
+    The `@function_tool` decorator introspects the function's name, type annotations, and docstring to generate a JSON schema that the LLM can reason about. The LLM receives that schema and calls the function when it decides it needs real weather data.
+
+    ```python
+    @function_tool
+    async def get_weather_alerts(state: str) -> str:
+        """
+        Get current weather alerts for a US state from the National Weather Service.
+
+        Args:
+            state: Two-letter US state code (e.g., 'CA', 'NY', 'TX')
+
+        Returns:
+            String describing current weather alerts
+        """
+        print(f" Calling NWS API for state: {state}")
+
+        try:
+            # Call the National Weather Service API
+            url = f"https://api.weather.gov/alerts/active/area/{state.upper()}"
+            headers = {"User-Agent": "OpenAI-Agents-Workshop (educational)"}
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=headers, timeout=10.0)
+                response.raise_for_status()
+
+                data = response.json()
+                features = data.get("features", [])
+
+                if not features:
+                    print("[OK] No active alerts")
+                    return f"No active weather alerts for {state.upper()}."
+
+                # Extract alert information
+                alerts = []
+                for feature in features[:5]:  # Limit to first 5 alerts
+                    properties = feature.get("properties", {})
+                    event = properties.get("event", "Unknown")
+                    headline = properties.get("headline", "No headline")
+                    severity = properties.get("severity", "Unknown")
+                    alerts.append(f"- {event} ({severity}): {headline}")
+
+                result = f"Active weather alerts for {state.upper()}:\n" + "\n".join(alerts)
+                print(f"[OK] Found {len(features)} alert(s)")
+                return result
+
+        except httpx.HTTPError as e:
+            error_msg = f"Failed to fetch weather alerts: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            return error_msg
+        except Exception as e:
+            error_msg = f"Unexpected error: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            return error_msg
+
+    print("[OK] Weather tool defined with @function_tool")
+    print("ℹ️  This tool makes real API calls to weather.gov")
+    ```
+
+    <Tip>
+      The LLM never sees your Python code—it sees a generated JSON schema derived from the function signature and docstring. The more precise your type hints and docstring, the more reliably the model will call your tool with correct arguments.
+    </Tip>
+  </Step>
+
+  <Step title="Create the Agent">
+    Pass the tool in the `tools` list. The `instructions` field shapes the model's behavior and persona throughout the conversation.
+
+    ```python
+    agent = Agent(
+        name="Weather Agent",
+        instructions="You help users get weather alert information for US states. Use the get_weather_alerts tool to fetch real data from the National Weather Service.",
+        tools=[get_weather_alerts]
+    )
+
+    print("[OK] Agent created with weather tool")
+    print("ℹ️  The agent can now fetch real weather alerts")
+    ```
+  </Step>
+
+  <Step title="Verify your OpenAI API key">
+    ```python
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set. Add it to your .env file.")
+
+    masked_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) >= 8 else "***"
+    print(f"[OK] OPENAI_API_KEY detected: {masked_key}")
+    ```
+  </Step>
+
+  <Step title="Run the agent">
+    `Runner.run()` is the entry point for a single-turn agent execution. It handles the tool-call loop automatically: if the LLM decides to call `get_weather_alerts`, the SDK executes it, sends the result back to the model, and continues until a final response is produced.
+
+    ```python
+    async def run_solution():
+        query = "Are there any weather alerts for California?"
+        print(f"\nQuery: {query}\n")
+
+        # Run the agent using the Agents SDK Runner
+        result = await Runner.run(agent, query)
+
+        # Display the final output
+        print(f"\n Agent Response:\n{result.final_output}\n")
+        print("ℹ️  This used a real API call to the National Weather Service!\n")
+
+    # Jupyter-specific async handling (notebooks already have an event loop)
+    try:
+        loop = asyncio.get_running_loop()
+        nest_asyncio.apply()
+        await run_solution()
+    except RuntimeError:
+        asyncio.run(run_solution())
+    ```
+  </Step>
+</Steps>
+
+## Key Insight: When Does the LLM Use a Tool?
+
+<Tip>
+  The LLM decides autonomously whether to call a tool on each turn. If you ask "What is 2+2?" it answers directly. If you ask "Are there flood warnings in Texas?" it recognises the knowledge gap and calls `get_weather_alerts("TX")`. You control the tool's availability; the model controls when to use it.
+</Tip>
+
+## Complete Solution at a Glance
+
+<CodeGroup>
+```python solution.ipynb (condensed)
+# --- Imports ---
+import asyncio, os, httpx, nest_asyncio
+from agents import Agent, Runner, function_tool
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# --- Tool ---
+@function_tool
+async def get_weather_alerts(state: str) -> str:
+    """Get current weather alerts for a US state from the National Weather Service."""
+    url = f"https://api.weather.gov/alerts/active/area/{state.upper()}"
+    headers = {"User-Agent": "OpenAI-Agents-Workshop (educational)"}
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        features = data.get("features", [])
+        if not features:
+            return f"No active weather alerts for {state.upper()}."
+        alerts = []
+        for feature in features[:5]:
+            p = feature.get("properties", {})
+            alerts.append(f"- {p.get('event', 'Unknown')} ({p.get('severity', 'Unknown')}): {p.get('headline', 'No headline')}")
+        return f"Active weather alerts for {state.upper()}:\n" + "\n".join(alerts)
+
+# --- Agent ---
+agent = Agent(
+    name="Weather Agent",
+    instructions="You help users get weather alert information for US states. Use the get_weather_alerts tool to fetch real data from the National Weather Service.",
+    tools=[get_weather_alerts]
+)
+
+# --- Runner ---
+async def run_solution():
+    result = await Runner.run(agent, "Are there any weather alerts for California?")
+    print(result.final_output)
+
+nest_asyncio.apply()
+asyncio.run(run_solution())
+```
+</CodeGroup>
+
+## Homework: Try It Yourself
+
+Open `exercises/01_agent_hello_world/exercise.ipynb` and fill in the `TODO` markers to recreate the solution from scratch. The notebook has the same cell structure—just empty implementations waiting for your code.
+
+## Stretch Goal
+
+<Accordion title="Handle weather alerts for multiple states at once">
+  Modify your agent to accept a comma-separated list of state codes and return a consolidated report. You can do this in two ways:
+
+  1. **Single tool, multiple calls** — Change the instructions to tell the agent it can call `get_weather_alerts` multiple times in one turn.
+  2. **Batch tool** — Add a new `@function_tool` that accepts `states: list[str]` and makes parallel `httpx` requests using `asyncio.gather()`.
+
+  Try the query: `"Check weather alerts for CA, TX, and FL"` and compare both approaches in the Temporal UI.
+</Accordion>
