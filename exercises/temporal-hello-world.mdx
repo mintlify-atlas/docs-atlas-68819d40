@@ -1,7 +1,7 @@
 ---
-title: "Run Your First Temporal Workflow with Activities"
+title: "Temporal Hello World: Your First Workflow and Activity"
 sidebarTitle: "Temporal Hello World"
-description: "Create a Temporal workflow that wraps a weather API call inside an activity, observe live execution history in the Temporal UI, and experience automatic retries first-hand."
+description: "Wrap a weather API call in a Temporal activity, orchestrate it from a workflow, and watch execution history and automatic retries live in the Temporal UI."
 ---
 
 This exercise introduces the two fundamental building blocks of every Temporal application: **workflows** and **activities**. You will wrap the same National Weather Service API call from Exercise 1 inside a proper Temporal activity, orchestrate it from a workflow, and watch the full execution history appear in the Temporal UI at `localhost:8233`.
@@ -17,16 +17,16 @@ This exercise introduces the two fundamental building blocks of every Temporal a
 ## What You'll Learn
 
 <CardGroup cols={2}>
-  <Card title="Workflows & Activities" icon="sitemap">
+  <Card title="Workflows & Activities" icon="sitemap" href="/concepts/temporal-fundamentals">
     Understand the difference between a workflow (orchestration logic) and an activity (a unit of work with side effects).
   </Card>
-  <Card title="Temporal UI" icon="display">
+  <Card title="Temporal UI" icon="display" href="/concepts/temporal-fundamentals">
     Navigate the workflow list, drill into execution history, and read event-level detail for each activity attempt.
   </Card>
-  <Card title="Automatic Retries" icon="rotate">
+  <Card title="Automatic Retries" icon="rotate" href="/concepts/temporal-fundamentals">
     See how Temporal re-attempts a failing activity according to its retry policy—no application code required.
   </Card>
-  <Card title="Durable Execution" icon="shield-check">
+  <Card title="Durable Execution" icon="shield-check" href="/concepts/durable-ai-agents">
     Kill the worker mid-execution, restart it, and observe the workflow resume from exactly where it stopped.
   </Card>
 </CardGroup>
@@ -37,7 +37,7 @@ Build a `HelloWorkflowTemporal` that invokes `get_weather_for_state("CA")` as a 
 
 ## Architecture
 
-```
+```text
 Workflow Execution Request
     ↓
 Temporal Workflow (orchestration)
@@ -225,16 +225,16 @@ Return to caller
 After running the starter cell, open the Temporal UI link printed to the console. You will see:
 
 <CardGroup cols={2}>
-  <Card title="Workflow Timeline" icon="timeline">
+  <Card title="Workflow Timeline" icon="timeline" href="/concepts/temporal-fundamentals">
     A visual timeline of every event: WorkflowExecutionStarted, ActivityTaskScheduled, ActivityTaskStarted, ActivityTaskCompleted, WorkflowExecutionCompleted.
   </Card>
-  <Card title="Activity Detail" icon="magnifying-glass">
+  <Card title="Activity Detail" icon="magnifying-glass" href="/concepts/temporal-fundamentals">
     Click any ActivityTask event to inspect the input arguments, output payload, attempt number, and timing for that specific execution.
   </Card>
-  <Card title="Execution History" icon="list">
+  <Card title="Execution History" icon="list" href="/concepts/temporal-fundamentals">
     The append-only event log that is the source of truth for Temporal's durability guarantees. Every state transition is recorded here.
   </Card>
-  <Card title="Worker Polling" icon="satellite-dish">
+  <Card title="Worker Polling" icon="satellite-dish" href="/concepts/temporal-fundamentals">
     In a separate tab you can watch the `hello-temporal-task-queue` queue depth and see which workers are currently polling.
   </Card>
 </CardGroup>

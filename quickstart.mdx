@@ -18,10 +18,12 @@ The fastest path to running the workshop is **GitHub Codespaces**. The repositor
 
     ```bash
     # What bootstrap.sh does (runs automatically — you do not need to run it)
-    pip install -e ".[dev]"          # Installs all Python dependencies
-    curl -sSf https://temporal.download/cli.sh | sh  # Installs Temporal CLI to ~/.temporalio/bin/
-    cp .env.sample .env              # Creates your .env file from the template
-    python scripts/check_env.py      # Validates the environment
+    pip install -e ".[dev]"                           # Installs all Python dependencies
+    # Installs Temporal CLI to ~/.temporalio/bin/ only if not already present
+    curl -sSf https://temporal.download/cli.sh | sh
+    # Creates your .env file from the template only if .env does not already exist
+    cp .env.sample .env
+    python scripts/check_env.py                       # Validates the environment (warns if key not yet set)
     ```
 
     You will see a terminal in VS Code printing bootstrap progress. Wait until you see `Bootstrap complete!` before proceeding.
@@ -89,9 +91,9 @@ The fastest path to running the workshop is **GitHub Codespaces**. The repositor
 
     A successful `make env` prints:
 
-    ```
+    ```text
     SUCCESS: Environment configured correctly
-       OPENAI_API_KEY: sk-proj-...****
+       OPENAI_API_KEY: sk-proj-...abcd
     ```
 
     If `make env` reports an error, see the [Environment Setup](/environment-setup) page for troubleshooting steps.
@@ -100,7 +102,7 @@ The fastest path to running the workshop is **GitHub Codespaces**. The repositor
   <Step title="Open the First Exercise and Start the Workshop">
     You are ready to begin! Open the first solution notebook:
 
-    ```
+    ```text
     solutions/01_agent_hello_world/solution.ipynb
     ```
 

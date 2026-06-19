@@ -1,7 +1,7 @@
 ---
 title: "Temporal Fundamentals: Workflows, Activities, and Workers"
 sidebarTitle: "Temporal Basics"
-description: "Understand Temporal's core primitives—workflows, activities, workers, and the client—and how they work together to provide durable execution in this workshop."
+description: "Understand Temporal's core primitives—workflows, activities, workers, and the client—and how they deliver durable execution in Exercises 2, 3, and 4."
 ---
 
 **Temporal** is a durable execution platform: it persists the state of your running code so that workflows survive crashes, retries, and worker restarts without losing progress. This workshop uses the `temporalio` Python SDK. This page walks through every Temporal primitive you will encounter in Exercises 2, 3, and 4, with real code from the solution notebooks.
@@ -237,7 +237,7 @@ async def run_solution():
 
 ## Architecture: How the Pieces Connect
 
-```
+```text
   ┌─────────────────┐     start_workflow()     ┌──────────────────────┐
   │  Starter Script  │ ───────────────────────► │  Temporal Server     │
   │  (Client)        │                          │  (State Store)       │

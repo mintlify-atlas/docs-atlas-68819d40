@@ -1,7 +1,7 @@
 ---
-title: "Build Your First OpenAI Agent with Tool Calling"
+title: "Build Your First AI Agent Using the OpenAI Agents SDK"
 sidebarTitle: "Agent Hello World"
-description: "Create a weather-alert AI agent using OpenAI Agents SDK's @function_tool decorator, learn how LLMs decide when to call tools, and query the National Weather Service API."
+description: "Create a weather-alert agent with @function_tool, run it against the National Weather Service API, and see how the LLM decides when to call tools."
 ---
 
 In this first exercise you build a working AI agent from scratch using the **OpenAI Agents SDK**. By wiring a `@function_tool`-decorated function to a real HTTP API, you see exactly how the agent→tool→response loop works—no mocking, no stubs, just live weather data from the National Weather Service.
@@ -13,16 +13,16 @@ In this first exercise you build a working AI agent from scratch using the **Ope
 ## What You'll Learn
 
 <CardGroup cols={2}>
-  <Card title="Tool Calling Basics" icon="wrench">
+  <Card title="Tool Calling Basics" icon="wrench" href="/concepts/openai-agents-sdk">
     Decorate any async function with `@function_tool` to expose it to the LLM as a callable action.
   </Card>
-  <Card title="Agent → Tool → Response Flow" icon="arrow-right-arrow-left">
+  <Card title="Agent → Tool → Response Flow" icon="arrow-right-arrow-left" href="/concepts/openai-agents-sdk">
     Trace the full lifecycle: the LLM receives a query, decides it needs a tool, calls it, reads the result, and forms a final answer.
   </Card>
-  <Card title="LLM Decision Making" icon="brain">
+  <Card title="LLM Decision Making" icon="brain" href="/concepts/openai-agents-sdk">
     Understand when and why a model chooses to invoke a tool versus answering directly from its training data.
   </Card>
-  <Card title="Real API Integration" icon="globe">
+  <Card title="Real API Integration" icon="globe" href="/concepts/openai-agents-sdk">
     Call a live public API—the National Weather Service—and surface the results inside an agent response.
   </Card>
 </CardGroup>
@@ -33,14 +33,14 @@ Create a **Weather Agent** that accepts a natural-language question about US wea
 
 Expected output for the default query _"Are there any weather alerts for California?"_:
 
-```
+```text
 Agent Response:
 Currently in California (CA), there are several active weather alerts...
 ```
 
 ## Architecture
 
-```
+```text
 User Query
     ↓
 LLM interprets query and may choose tool
@@ -150,7 +150,7 @@ Return to user
   </Step>
 
   <Step title="Create the Agent">
-    Pass the tool in the `tools` list. The `instructions` field shapes the model's behavior and persona throughout the conversation.
+    Pass the tool in the `tools` list. The `instructions` field shapes the model's behavior and persona throughout the conversation. Notice that no `model` parameter is set—the agent uses the OpenAI Agents SDK default model.
 
     ```python
     agent = Agent(

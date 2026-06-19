@@ -1,7 +1,7 @@
 ---
-title: "Makefile Commands Reference for Workshop Tasks"
+title: "Makefile Command Reference: All Workshop Make Targets"
 sidebarTitle: "Makefile Commands"
-description: "Every make target in the Temporal + OpenAI Agents SDK workshop — what each command runs, when to use it, and how setup, lint, test, and Temporal targets work."
+description: "Every make target in the workshop — what each command runs, when to use it, and how setup, lint, test, and temporal-up targets work together."
 ---
 
 The workshop repository ships a `Makefile` that wraps the most common development tasks into short, memorable commands. This page documents every target — the exact shell command it runs, its purpose, and any important caveats to keep in mind during the 90-minute session.
@@ -20,7 +20,7 @@ The workshop repository ships a `Makefile` that wraps the most common developmen
 | `make lint` | `ruff check .` then `mypy exercises/ solutions/ scripts/` | Run code quality checks |
 | `make test` | `pytest -v` | Run the full test suite |
 | `make temporal-up` | `bash scripts/run_temporal.sh` | Start the Temporal dev server (idempotent) |
-| `make temporal-down` | `pkill -f "temporal server start-dev"` | Stop the Temporal dev server |
+| `make temporal-down` | `pkill -f "temporal server start-dev" \|\| echo "Temporal not running"` | Stop the Temporal dev server |
 | `make clean` | Remove `__pycache__`, `.pytest_cache`, `.mypy_cache` | Delete generated cache directories |
 
 ## Detailed Reference
@@ -107,7 +107,7 @@ The workshop repository ships a `Makefile` that wraps the most common developmen
     bash scripts/run_temporal.sh
     ```
 
-    Starts the Temporal development server **idempotently** — if a `temporal server start-dev` process is already running, the script exits immediately without starting a duplicate. When starting fresh, it launches the server in the background with a persistent SQLite database at `~/.temporal/default.db`, waits three seconds, and confirms the process is alive.
+    Starts the Temporal development server **idempotently** — if a `temporal server start-dev` process is already running, the script exits immediately without starting a duplicate. When starting fresh, it launches the server with a persistent SQLite database at `~/.temporal/default.db`, waits three seconds to confirm the process is alive, then blocks the terminal while the server runs. Press Ctrl+C to stop it.
 
     - **gRPC endpoint:** `localhost:7233` (used by workers and starters to connect)
     - **Web UI:** `localhost:8233` (open in your browser to observe workflows)
@@ -189,15 +189,21 @@ Exercises 1–3 are Jupyter notebooks you open in VS Code. Exercise 4 uses separ
     Leave this terminal open — the worker must remain running.
   </Step>
   <Step title="Submit the workflow (Terminal 2)">
-    The starter script connects to Temporal and submits a workflow execution:
+    The starter script connects to Temporal and submits a workflow execution. You can run it with a default query or pass a custom query as a command-line argument:
 
     ```bash
     cd solutions/04_agent_routing
+    # Use the default query ("Hi! Tell me a tongue twister.")
     python starter.py
     # 🚀 Starting Routing Workflow
     # ✅ Workflow started: routing-wed-oct-16-103045est
     # ⏳ Waiting for agent response...
     # 💬 Agent Response: Response: She sells seashells by the seashore.
+    ```
+
+    ```bash
+    # Or pass a custom query directly
+    python starter.py "Your query here"
     ```
   </Step>
 </Steps>

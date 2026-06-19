@@ -1,7 +1,7 @@
 ---
-title: "Durable AI Agents: Why and How to Combine Temporal with OpenAI"
+title: "Durable AI Agents: Combining Temporal with OpenAI Agents SDK"
 sidebarTitle: "Durable Agents"
-description: "Discover why production AI agents need Temporal's durable execution, how OpenAIAgentsPlugin wires the two together, and what you gain without changing agent code."
+description: "Learn why production AI agents need Temporal, how OpenAIAgentsPlugin wires the two together, and what you gain without touching your agent code."
 ---
 
 Naive AI agents are surprisingly fragile in production. A single LLM API rate-limit, a transient network error, or a worker crash mid-execution means restarting the entire agent from scratch—re-running every LLM call and burning API credits. **Durable AI agents** solve this by wrapping every model inference and tool call in a Temporal activity, giving you automatic retries, crash recovery, and a complete audit trail—all without changing a line of agent logic. This page explains the pattern and shows the exact code used in Exercise 3 and Exercise 4.
@@ -201,7 +201,7 @@ ModelActivityParameters(
 
 ## Architecture: Every LLM Call as an Activity
 
-```
+```text
        User Query
            │
            ▼
@@ -242,16 +242,16 @@ ModelActivityParameters(
 ## What You Gain
 
 <CardGroup cols={2}>
-  <Card title="Automatic retries" icon="rotate">
+  <Card title="Automatic retries" icon="rotate" href="/exercises/durable-agent">
     Every LLM API call and tool execution retries on transient failure using Temporal's configurable retry policy—no manual retry loops needed.
   </Card>
-  <Card title="Crash recovery" icon="shield-halved">
+  <Card title="Crash recovery" icon="shield-halved" href="/exercises/durable-agent">
     If the worker process crashes mid-agent-execution, Temporal resumes from the last completed activity when the worker restarts. Completed LLM calls are never re-run.
   </Card>
-  <Card title="Full execution history" icon="list-check">
+  <Card title="Full execution history" icon="list-check" href="/exercises/durable-agent">
     Every activity start, completion, failure, and retry is recorded in Temporal's event history. Inspect it in the Temporal Web UI at port 8233.
   </Card>
-  <Card title="OpenAI trace correlation" icon="link">
+  <Card title="OpenAI trace correlation" icon="link" href="/exercises/agent-routing">
     Wrap `Runner.run()` with `trace("name")` and every LLM call appears in the OpenAI platform under Traces, correlated with the workflow execution ID.
   </Card>
 </CardGroup>

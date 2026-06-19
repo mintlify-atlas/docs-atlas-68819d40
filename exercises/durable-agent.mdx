@@ -1,7 +1,7 @@
 ---
-title: "Build a Production-Durable AI Agent with Temporal"
+title: "Build a Crash-Proof AI Agent with Temporal and OpenAI"
 sidebarTitle: "Durable Agent"
-description: "Combine OpenAI Agents SDK with Temporal's OpenAIAgentsPlugin to make every LLM call automatically retryable, observable, and crash-proof—without changing your agent code."
+description: "Add OpenAIAgentsPlugin to a Temporal workflow so every LLM call is a retryable activity—crash-proof durability without rewriting agent logic."
 ---
 
 This is **the key exercise** of the workshop. You take the agent from Exercise 1 and the Temporal primitives from Exercise 2 and snap them together using `temporalio.contrib.openai_agents`. The result is a production-ready AI agent where every LLM call runs as a Temporal activity—automatically retried on failure, fully observable in the UI, and persistent across crashes.
@@ -17,16 +17,16 @@ This is **the key exercise** of the workshop. You take the agent from Exercise 1
 ## What You'll Learn
 
 <CardGroup cols={2}>
-  <Card title="OpenAIAgentsPlugin" icon="plug">
+  <Card title="OpenAIAgentsPlugin" icon="plug" href="/concepts/durable-ai-agents">
     Register Temporal's official plugin to make the Agents SDK route every model call through a Temporal activity automatically.
   </Card>
-  <Card title="Automatic Retries" icon="rotate">
+  <Card title="Automatic Retries" icon="rotate" href="/concepts/temporal-fundamentals">
     Watch Temporal retry a failing LLM or tool activity without any explicit retry code in your agent.
   </Card>
-  <Card title="State Persistence" icon="database">
+  <Card title="State Persistence" icon="database" href="/concepts/durable-ai-agents">
     Crash the worker mid-execution and restart it—the workflow resumes from the exact activity that was in-progress.
   </Card>
-  <Card title="Trace Correlation" icon="magnifying-glass">
+  <Card title="Trace Correlation" icon="magnifying-glass" href="/concepts/durable-ai-agents">
     Correlate the Temporal workflow ID with the OpenAI trace ID to debug agent decisions alongside infrastructure events.
   </Card>
 </CardGroup>
@@ -37,7 +37,7 @@ Build `WeatherAgentWorkflow`, a Temporal workflow that internally creates an Ope
 
 ## Architecture
 
-```
+```text
 User Query
     ↓
 Temporal Workflow (orchestration layer)

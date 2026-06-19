@@ -82,9 +82,9 @@ make env
 
 The script loads `.env` with `python-dotenv`, checks that `OPENAI_API_KEY` is non-empty, and prints a masked preview:
 
-```
+```text
 SUCCESS: Environment configured correctly
-   OPENAI_API_KEY: sk-proj-...****
+   OPENAI_API_KEY: sk-proj-...abcd
 ```
 
 If the key is missing or blank, the script exits with a non-zero code and prints instructions for fixing the issue.
@@ -95,9 +95,12 @@ The Temporal CLI is installed by `scripts/bootstrap.sh` using the official insta
 
 ```bash
 # What bootstrap.sh runs to install the CLI (runs automatically — no manual step needed)
-curl -sSf https://temporal.download/cli.sh | sh
-export PATH="$HOME/.temporalio/bin:$PATH"
-echo 'export PATH="$HOME/.temporalio/bin:$PATH"' >> ~/.bashrc
+# The install is skipped if the temporal binary is already present on PATH
+if ! command -v temporal &> /dev/null; then
+    curl -sSf https://temporal.download/cli.sh | sh
+    export PATH="$HOME/.temporalio/bin:$PATH"
+    echo 'export PATH="$HOME/.temporalio/bin:$PATH"' >> ~/.bashrc
+fi
 ```
 
 The binary is placed at **`~/.temporalio/bin/temporal`** and the path is added to `~/.bashrc` for all future shell sessions.

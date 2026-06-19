@@ -1,7 +1,7 @@
 ---
-title: "Multi-Agent Routing Workflow with Language Specialists"
+title: "Multi-Agent Routing Workflow with Language Detection"
 sidebarTitle: "Agent Routing"
-description: "Build a triage-and-handoff multi-agent system in production file structure: a triage agent detects language and routes to French, Spanish, or English specialist agents inside a durable Temporal workflow."
+description: "Build a triage agent that detects language and routes to French, Spanish, or English specialists inside a durable Temporal workflow."
 ---
 
 Exercise 4 graduates from notebooks to a **production-style Python project**. You will have three separate files—`workflow.py`, `worker.py`, and `starter.py`—and run two terminal processes simultaneously, exactly as you would in a real deployment. The workflow includes a deliberate 10-second pause so you can kill the worker mid-execution and prove that Temporal resumes from the pause point rather than re-running the triage agent.
@@ -17,16 +17,16 @@ Exercise 4 graduates from notebooks to a **production-style Python project**. Yo
 ## What You'll Learn
 
 <CardGroup cols={2}>
-  <Card title="Triage & Routing Pattern" icon="code-branch">
+  <Card title="Triage & Routing Pattern" icon="code-branch" href="/concepts/openai-agents-sdk">
     Design a triage agent that never answers directly—it only detects intent and hands off to the right specialist.
   </Card>
-  <Card title="Handoff Pattern" icon="right-left">
+  <Card title="Handoff Pattern" icon="right-left" href="/concepts/openai-agents-sdk">
     Use the `handoffs` parameter in the OpenAI Agents SDK to enable seamless agent-to-agent transitions.
   </Card>
-  <Card title="Production File Structure" icon="folder-open">
+  <Card title="Production File Structure" icon="folder-open" href="/reference/project-structure">
     Separate `workflow.py`, `worker.py`, and `starter.py` mirrors real Temporal applications and enables independent scaling.
   </Card>
-  <Card title="Two-Terminal Workflow" icon="terminal">
+  <Card title="Two-Terminal Workflow" icon="terminal" href="/reference/makefile-commands">
     Run a long-lived worker process and a one-shot starter process as separate OS processes—the standard production pattern.
   </Card>
 </CardGroup>
@@ -37,7 +37,7 @@ Build a `RoutingWorkflow` that routes any user message to the correct language s
 
 ## Architecture
 
-```
+```text
 User Query (any language)
         ↓
 ┌───────────────────────────┐
@@ -67,7 +67,7 @@ User Query (any language)
 
 ## File Structure
 
-```
+```text
 solutions/04_agent_routing/
 ├── workflow.py      # Workflow definition and all agent configurations
 ├── worker.py        # Worker process that polls and executes workflows
@@ -311,7 +311,7 @@ if __name__ == "__main__":
     ```
 
     Expected output:
-    ```
+    ```text
     🚀 Worker started successfully
     📋 Task Queue: routing-workflow-queue
     🔄 Workflows: RoutingWorkflow
@@ -334,7 +334,7 @@ if __name__ == "__main__":
     ```
 
     Expected output:
-    ```
+    ```text
     🚀 Starting Routing Workflow
     📋 Workflow ID: routing-wed-oct-16-103045est
     💬 Query: ¡Hola! Cuéntame un trabalenguas.

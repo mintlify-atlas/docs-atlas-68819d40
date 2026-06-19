@@ -10,25 +10,33 @@ This page maps out the full layout of the `temporal-openai-agents-sdk` repositor
 
 ```text
 temporal-openai-agents-sdk/
-├── solutions/                    # Complete workshop implementations
-│   ├── 01_agent_hello_world/     # Exercise 1 (.ipynb)
-│   ├── 02_temporal_hello_world/  # Exercise 2 (.ipynb)
-│   ├── 03_durable_agent/         # Exercise 3 (.ipynb)
-│   └── 04_agent_routing/         # Exercise 4 (.py files)
-├── exercises/                    # Homework starter code
-│   ├── 01_agent_hello_world/     # Exercise 1 starter (.ipynb)
-│   ├── 02_temporal_hello_world/  # Exercise 2 starter (.ipynb)
-│   ├── 03_durable_agent/         # Exercise 3 starter (.ipynb)
-│   └── 04_agent_routing/         # Exercise 4 starter (.py files)
-├── scripts/                      # Helper scripts
-│   ├── bootstrap.sh              # Dev container post-create hook
-│   ├── run_temporal.sh           # Idempotent Temporal server starter
-│   └── check_env.py              # API key validation
-├── .devcontainer/                # GitHub Codespaces configuration
-├── temporal_installation.ipynb   # Temporal CLI install notebook
-├── pyproject.toml                # Python project + dependencies
-├── Makefile                      # Common commands
-└── .env.sample                   # Environment variable template
+├── solutions/                          # Complete workshop implementations
+│   ├── 01_agent_hello_world/           # Exercise 1 (solution.ipynb)
+│   ├── 02_temporal_hello_world/        # Exercise 2 (solution.ipynb)
+│   ├── 03_durable_agent/               # Exercise 3 (solution.ipynb)
+│   └── 04_agent_routing/               # Exercise 4 (.py files)
+├── exercises/                          # Homework starter code
+│   ├── 01_agent_hello_world/           # Exercise 1 starter (exercise.ipynb)
+│   ├── 02_temporal_hello_world/        # Exercise 2 starter (exercise.ipynb)
+│   ├── 03_durable_agent/               # Exercise 3 starter (exercise.ipynb)
+│   └── 04_agent_routing/               # Exercise 4 starter (.py files)
+├── scripts/                            # Helper scripts
+│   ├── bootstrap.sh                    # Dev container post-create hook
+│   ├── run_temporal.sh                 # Idempotent Temporal server starter
+│   ├── check_env.py                    # API key validation
+│   └── apply_notebook_metadata.py      # Notebook metadata helper
+├── .devcontainer/
+│   └── devcontainer.json               # GitHub Codespaces configuration
+├── .github/
+│   └── workflows/
+│       └── ci.yml                      # CI pipeline
+├── temporal_installation.ipynb         # Temporal CLI install notebook
+├── pyproject.toml                      # Python project + dependencies
+├── Makefile                            # Common commands
+├── .env.sample                         # Environment variable template
+├── README.md                           # Project overview and quickstart
+├── WORKSHOP_SPEC.md                    # Workshop specification
+└── CLAUDE.md                           # Claude AI assistant context
 ```
 
 ## `solutions/` vs `exercises/`
@@ -73,7 +81,7 @@ After bootstrap completes, the environment check script runs automatically to va
 
 ### `run_temporal.sh`
 
-This script starts the Temporal development server idempotently. It first checks whether a `temporal server start-dev` process is already running via `pgrep`; if so it exits immediately rather than spawning a duplicate. Otherwise it launches the server in the background with a persistent database file at `~/.temporal/default.db`, waits three seconds, and confirms the process is alive before handing control back.
+This script starts the Temporal development server idempotently. It first checks whether a `temporal server start-dev` process is already running via `pgrep`; if so it exits immediately rather than spawning a duplicate. Otherwise it starts the server with a persistent database file at `~/.temporal/default.db`, waits three seconds to confirm the process is alive, then blocks the terminal while the server runs. Press Ctrl+C to stop it.
 
 - **gRPC endpoint:** `localhost:7233`
 - **Web UI:** `localhost:8233`

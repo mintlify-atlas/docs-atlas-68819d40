@@ -112,7 +112,7 @@ The docstring is the tool's "manual" for the LLM. Write it clearly and include t
 
 Understanding the execution loop is key to reasoning about agent behaviour:
 
-```
+```text
 User query submitted to Runner.run()
           ↓
   LLM receives query + tool definitions
@@ -139,38 +139,46 @@ The `handoffs` parameter lets an agent transfer control to a **specialist agent*
 ```python
 from agents import Agent
 
-french_agent = Agent(
-    name="French Agent",
-    instructions="You only speak French. Respond naturally to user queries in French.",
-    model="gpt-4",
-)
 
-spanish_agent = Agent(
-    name="Spanish Agent",
-    instructions="You only speak Spanish. Respond naturally to user queries in Spanish.",
-    model="gpt-4",
-)
+def french_agent() -> Agent:
+    return Agent(
+        name="French Agent",
+        instructions="You only speak French. Respond naturally to user queries in French.",
+        model="gpt-4",
+    )
 
-english_agent = Agent(
-    name="English Agent",
-    instructions="You only speak English. Respond naturally to user queries in English.",
-    model="gpt-4",
-)
 
-triage_agent = Agent(
-    name="Triage Agent",
-    instructions=(
-        "Identify the primary language of the user's message. "
-        "Never answer directly. "
-        "Immediately hand off using one of the following rules: "
-        "- French → French Agent "
-        "- Spanish → Spanish Agent "
-        "- English → English Agent "
-        "If detection is uncertain or the language is unsupported, hand off to English Agent."
-    ),
-    handoffs=[french_agent, spanish_agent, english_agent],
-    model="gpt-4",
-)
+def spanish_agent() -> Agent:
+    return Agent(
+        name="Spanish Agent",
+        instructions="You only speak Spanish. Respond naturally to user queries in Spanish.",
+        model="gpt-4",
+    )
+
+
+def english_agent() -> Agent:
+    return Agent(
+        name="English Agent",
+        instructions="You only speak English. Respond naturally to user queries in English.",
+        model="gpt-4",
+    )
+
+
+def triage_agent() -> Agent:
+    return Agent(
+        name="Triage Agent",
+        instructions=(
+            "Identify the primary language of the user's message. "
+            "Never answer directly. "
+            "Immediately hand off using one of the following rules: "
+            "- French → French Agent "
+            "- Spanish → Spanish Agent "
+            "- English → English Agent "
+            "If detection is uncertain or the language is unsupported, hand off to English Agent."
+        ),
+        handoffs=[french_agent(), spanish_agent(), english_agent()],
+        model="gpt-4",
+    )
 ```
 
 When `Runner.run()` executes the triage agent and a handoff is triggered, the SDK transparently continues execution with the specialist agent—no extra code required.
@@ -180,6 +188,8 @@ When `Runner.run()` executes the triage agent and a handoff is triggered, the SD
 `trace()` is a **context manager** that groups all SDK operations inside it under a single named trace in the OpenAI dashboard. In Exercise 4 it is used directly inside the Temporal workflow:
 
 ```python
+from datetime import timedelta
+
 from agents import Runner, TResponseInputItem, trace
 from temporalio import workflow
 
